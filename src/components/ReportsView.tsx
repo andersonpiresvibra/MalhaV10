@@ -310,7 +310,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ flights, initialFlight
             `}
         </style>
         {portalTarget && createPortal(
-    <div className={`px-4 md:px-6 h-16 shrink-0 flex items-center justify-between border-b ${isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-[#004D24] border-[#004D24] text-white shadow-[0_2px_8px_rgba(0,0,0,0.5)]"} z-20 w-full`}>
+    <div className={`px-4 md:px-6 h-16 shrink-0 flex items-center justify-between border-b ${isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-[#e2e8f0] border-transparent text-slate-900 shadow-[0_2px_8px_rgba(0,0,0,0.5)]"} z-20 w-full`}>
                 {selectedFlight ? (
                         <div className="flex items-center justify-between w-full">
                             <div className="flex items-center gap-4">

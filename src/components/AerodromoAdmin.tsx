@@ -231,7 +231,7 @@ export const AerodromoAdmin: React.FC<AerodromoAdminProps> = ({
   return (
     <div className={`flex-1 flex flex-col h-full overflow-hidden ${isDarkMode ? 'bg-slate-950 text-slate-200' : 'bg-slate-50 text-slate-800'}`}>
       {/* Header Admin */}
-      <div className={`px-6 h-16 shrink-0 flex items-center justify-between border-b ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-[#004D24] border-[#004D24] text-white shadow-[0_2px_8px_rgba(0,0,0,0.5)]'} z-20`}>
+      <div className={`px-6 h-16 shrink-0 flex items-center justify-between border-b ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} z-20`}>
         <div className="flex items-center gap-4">
           <div className={`p-2 rounded-lg ${isDarkMode ? 'bg-indigo-500/10 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
              <LayoutGrid size={20} />
