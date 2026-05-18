@@ -38,11 +38,29 @@ const L_TO_GAL = 0.264172;
 
 // Helper de simulação de atraso
 const isDelayed = (flight: FlightData) => {
-    if (!flight.endTime || !flight.etd) return false;
-    const [h, m] = flight.etd.split(':').map(Number); 
-    const etdDate = new Date(flight.endTime); 
+    if (!flight.endTime || !flight.etd || flight.etd === '?' || String(flight.etd).toUpperCase().includes('PR')) return false;
+    
+    // Parse etd
+    const etdStr = String(flight.etd).replace(/[^0-9]/g, '');
+    if (etdStr.length < 3) return false;
+    
+    let h = 0, m = 0;
+    if (etdStr.length === 3) {
+        h = parseInt(etdStr.slice(0, 1), 10);
+        m = parseInt(etdStr.slice(1, 3), 10);
+    } else {
+        h = parseInt(etdStr.slice(0, 2), 10);
+        m = parseInt(etdStr.slice(2, 4), 10);
+    }
+
+    const endTimeDate = new Date(flight.endTime);
+    // Verificar se a data é válida
+    if (isNaN(endTimeDate.getTime())) return false;
+    
+    const etdDate = new Date(endTimeDate); 
     etdDate.setHours(h, m, 0, 0);
-    return flight.endTime.getTime() > etdDate.getTime();
+    
+    return endTimeDate.getTime() > etdDate.getTime();
 };
 
 // Helper para ordenação
@@ -266,9 +284,33 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ flights, initialFlight
 
   return (
     <div className={`w-full h-full flex flex-col ${isDarkMode ? 'bg-slate-950 text-white' : 'bg-white text-slate-900'} overflow-hidden`}>
-        
+        <style>
+            {`
+            @media print {
+                body * {
+                    visibility: hidden;
+                }
+                #printable-report-container, #printable-report-container * {
+                    visibility: visible;
+                }
+                #printable-report-container {
+                    position: absolute;
+                    left: 0;
+                    top: 0;
+                    width: 100%;
+                    margin: 0;
+                    padding: 0;
+                    box-shadow: none;
+                    background: transparent;
+                }
+                .no-print {
+                    display: none !important;
+                }
+            }
+            `}
+        </style>
         {portalTarget && createPortal(
-    <div className={`px-4 md:px-6 h-16 shrink-0 flex items-center justify-between border-b ${isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-[#e2e8f0] border-transparent text-slate-900 shadow-[0_2px_8px_rgba(0,0,0,0.5)]"} z-20 w-full`}>
+    <div className={`px-4 md:px-6 h-16 shrink-0 flex items-center justify-between border-b ${isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-[#004D24] border-[#004D24] text-white shadow-[0_2px_8px_rgba(0,0,0,0.5)]"} z-20 w-full`}>
                 {selectedFlight ? (
                         <div className="flex items-center justify-between w-full">
                             <div className="flex items-center gap-4">
@@ -486,6 +528,9 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ flights, initialFlight
                             <span className="block text-xs font-bold uppercase text-slate-500 mt-1">
                                 {new Date().toLocaleDateString()} • {new Date().toLocaleTimeString()}
                             </span>
+                            <span className="block text-sm font-black text-slate-900 uppercase mt-1">
+                                {selectedFlight.airline}
+                            </span>
                         </div>
                     </div>
 
@@ -516,8 +561,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ flights, initialFlight
                         </h2>
                         <div className="grid grid-cols-4 gap-y-4 gap-x-8 text-sm">
                             <div>
-                                <span className="block text-[10px] font-bold text-slate-500 uppercase">Companhia</span>
-                                <span className="font-bold text-slate-900">{selectedFlight.airline} ({selectedFlight.airlineCode})</span>
+                                <span className="block text-[10px] font-bold text-slate-500 uppercase">Voo</span>
+                                <span className="font-bold text-slate-900">{selectedFlight.airlineCode}-{selectedFlight.flightNumber}</span>
                             </div>
                             <div>
                                 <span className="block text-[10px] font-bold text-slate-500 uppercase">Aeronave</span>
@@ -528,24 +573,24 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ flights, initialFlight
                                 <span className="font-bold text-slate-900">{selectedFlight.model}</span>
                             </div>
                             <div>
-                                <span className="block text-[10px] font-bold text-slate-500 uppercase">Rota</span>
-                                <span className="font-bold text-slate-900">{selectedFlight.origin} / {selectedFlight.destination}</span>
+                                <span className="block text-[10px] font-bold text-slate-500 uppercase">Destino</span>
+                                <span className="font-bold text-slate-900">{selectedFlight.destination} / {ICAO_CITIES[selectedFlight.destination] || 'EXTERIOR'}</span>
                             </div>
                             <div>
                                 <span className="block text-[10px] font-bold text-slate-500 uppercase">Posição</span>
                                 <span className="font-bold text-slate-900">{selectedFlight.positionId}</span>
                             </div>
                             <div>
-                                <span className="block text-[10px] font-bold text-slate-500 uppercase">ETD (Saída)</span>
-                                <span className="font-bold text-slate-900 font-mono">{selectedFlight.etd}</span>
-                            </div>
-                            <div>
-                                <span className="block text-[10px] font-bold text-slate-500 uppercase">Frota Utilizada</span>
+                                <span className="block text-[10px] font-bold text-slate-500 uppercase">Frota</span>
                                 <span className="font-bold text-slate-900 uppercase">{selectedFlight.fleet ? `CTA-${selectedFlight.fleet}` : 'REDE HIDRANTE'}</span>
                             </div>
                             <div>
-                                <span className="block text-[10px] font-bold text-slate-500 uppercase">Tipo Eqp.</span>
-                                <span className="font-bold text-slate-900 uppercase">{selectedFlight.vehicleType}</span>
+                                <span className="block text-[10px] font-bold text-slate-500 uppercase">ETA</span>
+                                <span className="font-bold text-slate-900 font-mono">{selectedFlight.eta || '--:--'}</span>
+                            </div>
+                            <div>
+                                <span className="block text-[10px] font-bold text-slate-500 uppercase">ETD</span>
+                                <span className="font-bold text-slate-900 font-mono">{selectedFlight.etd || '--:--'}</span>
                             </div>
                         </div>
                     </div>
@@ -557,57 +602,79 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ flights, initialFlight
                         </h2>
                         
                         {/* Linha de Tempos */}
-                        <div className="grid grid-cols-4 gap-4 mb-6 p-4 bg-slate-50 rounded border border-slate-200">
+                        <div className="grid grid-cols-4 gap-x-4 gap-y-3 mb-3 py-1.5 px-4 bg-slate-50 rounded border border-slate-200 text-center">
                             <div>
                                 <span className="block text-[10px] font-bold text-slate-500 uppercase">Hora Designação</span>
-                                <span className="font-mono font-bold text-slate-900">
-                                    {selectedFlight.designationTime ? selectedFlight.designationTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}
+                                <span className="font-mono font-bold text-slate-900 leading-6">
+                                    {selectedFlight.designationTime ? new Date(selectedFlight.designationTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}
                                 </span>
                             </div>
                             <div>
                                 <span className="block text-[10px] font-bold text-slate-500 uppercase">Início Abastecimento</span>
                                 <span className="font-mono font-bold text-slate-900">
-                                    {selectedFlight.startTime ? selectedFlight.startTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}
+                                    {selectedFlight.startTime ? new Date(selectedFlight.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}
                                 </span>
                             </div>
                             <div>
                                 <span className="block text-[10px] font-bold text-slate-500 uppercase">Término Abastecimento</span>
                                 <span className="font-mono font-bold text-slate-900">
-                                    {selectedFlight.endTime ? selectedFlight.endTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}
+                                    {selectedFlight.endTime ? new Date(selectedFlight.endTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}
                                 </span>
                             </div>
                             <div>
                                 <span className="block text-[10px] font-bold text-slate-500 uppercase">Operador Responsável</span>
-                                <div className="mt-1">
-                                    <OperatorCell operatorName={selectedFlight.operator} operators={operators} />
+                                <div className="mt-1 font-bold text-slate-900 text-sm">
+                                    {selectedFlight.operator || '--'}
                                 </div>
+                            </div>
+                            <div>
+                                <span className="block text-[10px] font-bold text-slate-500 uppercase">Fuel Order</span>
+                                <span className="font-mono font-bold text-slate-900">
+                                    {selectedFlight.report?.fuelOrderTime || '--:--'}
+                                </span>
+                            </div>
+                            <div>
+                                <span className="block text-[10px] font-bold text-slate-500 uppercase">Mecânico</span>
+                                <span className="font-mono font-bold text-slate-900">
+                                    {selectedFlight.report?.mechanicTime || '--:--'}
+                                </span>
+                            </div>
+                            <div>
+                                <span className="block text-[10px] font-bold text-slate-500 uppercase">Tripulação</span>
+                                <span className="font-mono font-bold text-slate-900">
+                                    {selectedFlight.report?.crewTime || '--:--'}
+                                </span>
+                            </div>
+                            <div>
+                                <span className="block text-[10px] font-bold text-slate-500 uppercase">Autorização</span>
+                                <span className="font-mono font-bold text-slate-900">
+                                    {selectedFlight.report?.authorizationTime || '--:--'}
+                                </span>
                             </div>
                         </div>
 
                         {/* Tabela de Volumes */}
                         <div className="border border-slate-300 rounded overflow-hidden">
-                            <table className="w-full text-left text-sm">
+                            <table className="w-full text-center text-sm">
                                 <thead className="bg-slate-100 text-slate-600 font-bold uppercase text-[10px] tracking-wider">
                                     <tr>
-                                        <th className="px-4 py-2 border-r border-slate-300">Unidade</th>
-                                        <th className="px-4 py-2 text-right">Quantidade Fornecida</th>
+                                        <th className="px-4 py-2 border-r border-slate-300 text-center">Litros (L)</th>
+                                        <th className="px-4 py-2 border-r border-slate-300 text-center">KG</th>
+                                        <th className="px-4 py-2 border-r border-slate-300 text-center">Galões (US GAL)</th>
+                                        <th className="px-4 py-2 text-center">Libras (LBS)</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-200 text-slate-900 font-mono font-bold">
+                                <tbody className="text-slate-900 font-mono font-bold">
                                     <tr>
-                                        <td className="px-4 py-2 border-r border-slate-200 text-xs uppercase">Litros (L)</td>
-                                        <td className="px-4 py-2 text-right">{selectedFlight.volume?.toLocaleString() || 0}</td>
-                                    </tr>
-                                    <tr>
-                                        <td className="px-4 py-2 border-r border-slate-200 text-xs uppercase">Quilogramas (KG) <span className="text-[9px] text-slate-400 font-normal">@0.803</span></td>
-                                        <td className="px-4 py-2 text-right">
+                                        <td className="px-4 py-2 border-r border-slate-200 text-center" style={{ width: '100px' }}>{selectedFlight.volume?.toLocaleString() || 0}</td>
+                                        <td className="px-4 py-2 border-r border-slate-200 text-center" style={{ width: '100px' }}>
                                             {selectedFlight.volume ? Math.round(selectedFlight.volume * AVG_DENSITY).toLocaleString() : 0}
                                         </td>
-                                    </tr>
-                                    <tr>
-                                        <td className="px-4 py-2 border-r border-slate-200 text-xs uppercase">Galões (US GAL)</td>
-                                        <td className="px-4 py-2 text-right">
+                                        <td className="px-4 py-2 border-r border-slate-200 text-center" style={{ width: '100px' }}>
                                             {selectedFlight.volume ? Math.round(selectedFlight.volume * L_TO_GAL).toLocaleString() : 0}
+                                        </td>
+                                        <td className="px-4 py-2 text-center">
+                                            {selectedFlight.volume ? Math.round(selectedFlight.volume * AVG_DENSITY * 2.20462).toLocaleString() : 0}
                                         </td>
                                     </tr>
                                 </tbody>
@@ -623,7 +690,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ flights, initialFlight
                         
                         <div className="border-l-2 border-slate-200 ml-2 space-y-3 py-1">
                             {selectedFlight.logs && selectedFlight.logs.length > 0 ? (
-                                selectedFlight.logs.sort((a,b) => a.timestamp.getTime() - b.timestamp.getTime()).map((log, idx) => (
+                                selectedFlight.logs.sort((a,b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()).map((log, idx) => (
                                     <div key={idx} className="relative pl-6">
                                         <div className={`absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
                                             log.type === 'SISTEMA' ? 'bg-slate-400' : 
@@ -631,17 +698,18 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ flights, initialFlight
                                             log.type === 'ATRASO' ? 'bg-amber-500' :
                                             log.type === 'OBSERVACAO' ? 'bg-amber-500' : 'bg-red-500'
                                         }`}></div>
-                                        <div className="flex flex-col">
-                                            <div className="flex items-baseline gap-2 text-[10px] uppercase font-bold text-slate-500">
-                                                <span className="font-mono text-slate-800">{log.timestamp.toLocaleTimeString()}</span>
-                                                <span>•</span>
-                                                <span>{log.type}</span>
-                                                <span>•</span>
-                                                <span className="text-slate-700">{log.author}</span>
-                                            </div>
-                                            <p className="text-xs text-slate-800 mt-0.5 font-medium leading-relaxed">
+                                        <div className="text-[10px] leading-relaxed">
+                                            <span className="font-mono font-bold text-slate-800 mr-1.5">
+                                                {log.timestamp ? new Date(log.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}
+                                            </span>
+                                            <span className="text-slate-400 mr-1.5">•</span>
+                                            <span className="font-bold text-slate-800 uppercase mr-1.5">
+                                                {log.type === 'SISTEMA' ? 'AUTOMÁTICO' : log.type}-{log.author}
+                                            </span>
+                                            <span className="text-slate-400 mr-1.5">•</span>
+                                            <span className="text-[11px] text-slate-900 font-medium break-words">
                                                 {log.message}
-                                            </p>
+                                            </span>
                                         </div>
                                     </div>
                                 ))
@@ -655,25 +723,13 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ flights, initialFlight
                     {selectedFlight.report && Object.values(selectedFlight.report).some(v => v) && (
                         <div className="mb-8">
                             <h2 className="text-xs font-black uppercase tracking-widest border-b border-slate-300 pb-1 mb-4 text-slate-600 flex items-center gap-2">
-                                <FileText size={14} /> Relatório de Campo Adicional
+                                <FileText size={14} /> Observações
                             </h2>
-                            <div className="grid grid-cols-2 gap-4 text-sm mb-4">
-                                {selectedFlight.report.fuelOrderTime && (
-                                    <div><span className="block text-[10px] font-bold text-slate-500 uppercase">Fuel Order</span><span className="font-mono">{selectedFlight.report.fuelOrderTime}</span></div>
-                                )}
-                                {selectedFlight.report.mechanicTime && (
-                                    <div><span className="block text-[10px] font-bold text-slate-500 uppercase">Mecânico</span><span className="font-mono">{selectedFlight.report.mechanicTime}</span></div>
-                                )}
-                                {selectedFlight.report.crewTime && (
-                                    <div><span className="block text-[10px] font-bold text-slate-500 uppercase">Tripulação</span><span className="font-mono">{selectedFlight.report.crewTime}</span></div>
-                                )}
-                                {selectedFlight.report.authorizationTime && (
-                                    <div><span className="block text-[10px] font-bold text-slate-500 uppercase">Autorização</span><span className="font-mono">{selectedFlight.report.authorizationTime}</span></div>
-                                )}
-                                {selectedFlight.report.obstructedAreaTime && (
-                                    <div className="text-red-600"><span className="block text-[10px] font-bold uppercase">Área Desobstruída</span><span className="font-mono">{selectedFlight.report.obstructedAreaTime}</span></div>
-                                )}
-                            </div>
+                            {selectedFlight.report.obstructedAreaTime && (
+                                <div className="mb-4">
+                                    <div className="text-red-700 font-bold"><span className="block text-[10px] font-bold uppercase text-red-500">Área Desobstruída</span><span className="font-mono">{selectedFlight.report.obstructedAreaTime}</span></div>
+                                </div>
+                            )}
                             
                             {selectedFlight.report.dispensed && (
                                 <div className="p-3 bg-red-50 border border-red-200 rounded text-red-800 text-sm mb-4">
@@ -690,11 +746,6 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ flights, initialFlight
                             )}
                         </div>
                     )}
-
-                    {/* RODAPÉ DO SISTEMA */}
-                    <div className="mt-auto pt-6 border-t border-slate-200 text-[9px] font-mono text-slate-400 text-center uppercase tracking-widest">
-                        JETFUEL-SIM Audit System • Documento Gerado Eletronicamente • Não Requer Assinatura
-                    </div>
 
                 </div>
             </div>
@@ -786,7 +837,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ flights, initialFlight
                                     sortedData.map(flight => {
                                         const badge = getStatusBadge(flight);
                                         const tabMinutes = flight.startTime && flight.endTime 
-                                            ? Math.floor((flight.endTime.getTime() - flight.startTime.getTime()) / 60000)
+                                            ? Math.floor((new Date(flight.endTime).getTime() - new Date(flight.startTime).getTime()) / 60000)
                                             : null;
                                         
                                         const flightShift = getShift(flight.endTime || flight.startTime);

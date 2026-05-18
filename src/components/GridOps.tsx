@@ -2054,7 +2054,7 @@ export const GridOps: React.FC<GridOpsProps> = ({
   );
 
   const subheaderContent = (
-      <div className={`px-6 h-16 shrink-0 flex items-center justify-between border-b ${isDarkMode ? "bg-slate-950 border-slate-800" : "bg-[#3CA317] border-transparent text-white shadow-[0_2px_8px_rgba(0,0,0,0.5)]"} z-20 w-full`}>
+      <div className={`px-6 h-16 shrink-0 flex items-center justify-between border-b ${isDarkMode ? "bg-slate-950 border-slate-800" : "bg-[#004D24] border-[#004D24] text-white shadow-[0_2px_8px_rgba(0,0,0,0.5)]"} z-20 w-full`}>
         <div className="flex items-center gap-6 h-full">
             <div className="flex items-center gap-3">
                 <div>
@@ -2062,7 +2062,7 @@ export const GridOps: React.FC<GridOpsProps> = ({
                 </div>
             </div>
 
-            <div className="flex items-center ml-2 bg-black/20 p-0.5 rounded border border-white/10 h-8">
+            <div className={`flex items-center ml-2 p-0.5 rounded border border-white/10 h-8 ${isDarkMode ? 'bg-black/20' : 'bg-[#2d583a]'}`}>
                 <button 
                   onClick={() => setActiveDateOffset(prev => prev - 1)}
                   className="px-1.5 py-1 flex items-center justify-center text-white hover:bg-white/10 rounded transition-colors"
