@@ -17,6 +17,7 @@ import { InlineOperatorSelect } from './ui/InlineOperatorSelect';
 import { insertAuditLog, upsertFlight, deleteFlight, getDestinos } from '../services/supabaseService';
 import { useAuth } from '../contexts/AuthContext';
 
+import { getCityName } from '../utils/destinos';
 import { 
   LayoutGrid, Clock, UserCheck, Droplet, CheckCircle, 
   ArrowUp, ArrowDown, ArrowUpDown, 
@@ -126,26 +127,6 @@ const getMinutesDiff = (targetTimeStr: string, flightDateStr?: string) => {
     let diff = Math.round((target.getTime() - current.getTime()) / 60000);
     
     return diff;
-};
-const ICAO_CITIES: Record<string, string> = {
-  'SBGL': 'GALEÃO',
-  'SBGR': 'GUARULHOS',
-  'SBSP': 'CONGONHAS',
-  'SBRJ': 'ST. DUMONT',
-  'SBKP': 'VIRACOPOS',
-  'SBNT': 'NATAL',
-  'SBSV': 'SALVADOR',
-  'SBPA': 'PTO ALEGRE',
-  'SBCT': 'CURITIBA',
-  'LPPT': 'LISBOA',
-  'EDDF': 'FRANKFURT',
-  'LIRF': 'FIUMICINO',
-  'KMIA': 'MIAMI',
-  'KATL': 'ATLANTA',
-  'MPTO': 'TOCUMEN',
-  'SCEL': 'SANTIAGO',
-  'SUMU': 'MONTEVIDÉU',
-  'SAEZ': 'EZEIZA',
 };
 
 const DELAY_REASONS = [
@@ -908,7 +889,7 @@ export const GridOps: React.FC<GridOpsProps> = ({
     if (!globalSearchTerm) return shiftedFlights;
     const lowerTerms = globalSearchTerm.toLowerCase().trim().split(/\s+/);
     return shiftedFlights.filter(f => {
-        const city = ICAO_CITIES[f.destination as string] || '';
+        const city = getCityName(f.destination as string, destinosDB) || '';
         const allFields = [
             f.flightNumber, f.departureFlightNumber, f.airline, f.airlineCode, f.model, 
             f.registration, f.origin, f.destination, f.eta, f.etd, f.actualArrivalTime,
@@ -1955,7 +1936,7 @@ export const GridOps: React.FC<GridOpsProps> = ({
                             const dateStr = getDisplayDate(activeDateOffset);
                             const headers = ['COMP', 'V.SAIDA', 'ICAO', 'CID', 'PREFIXO', 'POS', 'ETD', 'CALCO', 'ETA', 'OPERADOR', 'FROTA', 'FRT.TIPO', 'STATUS', 'VOLUME'];
                             const rows = visibleFlights.map(f => [
-                                f.airline || '', f.departureFlightNumber || '', f.destination || '', ICAO_CITIES[f.destination] || 'EXTERIOR',
+                                f.airline || '', f.departureFlightNumber || '', f.destination || '', getCityName(f.destination || '', destinosDB),
                                 f.registration || '', f.positionId || '', f.etd || '', f.actualArrivalTime || '?', f.eta || '?',
                                 f.operator || '', f.fleet || '', f.fleetType || '', f.status || '', f.volume || ''
                             ].map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','));
@@ -2356,7 +2337,7 @@ export const GridOps: React.FC<GridOpsProps> = ({
 
                                 {/* CITY (Not directly editable, derived from destination) */}
                                 <td className={`px-1 border-y border-l ${isDarkMode ? (row.id === clickedRowId ? 'border-emerald-500/80 bg-gradient-to-b from-emerald-900/60 to-emerald-800/60' : 'border-slate-700/50 bg-gradient-to-b from-slate-800/50 to-slate-900/80 group-hover:from-emerald-900/30 group-hover:to-emerald-800/30 group-hover:border-emerald-500/30') : (row.id === clickedRowId ? 'border-emerald-400 bg-emerald-300' : 'border-slate-200 bg-white group-hover:bg-emerald-200')} transition-all text-center font-black text-[9px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'} uppercase tracking-tight`}>
-                                    {ICAO_CITIES[row.destination] || 'EXTERIOR'}
+                                    {getCityName(row.destination || '', destinosDB)}
                                 </td>
 
                                 {/* REGISTRATION */}
@@ -2433,7 +2414,7 @@ export const GridOps: React.FC<GridOpsProps> = ({
 
                                 {/* CITY */}
                                 <td className={`px-2 border-y border-l ${isDarkMode ? (row.id === clickedRowId ? 'border-emerald-500/80 bg-gradient-to-b from-emerald-900/60 to-emerald-800/60' : 'border-slate-700/50 bg-gradient-to-b from-slate-800/50 to-slate-900/80 group-hover:from-emerald-900/30 group-hover:to-emerald-800/30 group-hover:border-emerald-500/30') : (row.id === clickedRowId ? 'border-emerald-400 bg-emerald-300' : 'border-slate-200 bg-white group-hover:bg-emerald-200')} transition-all text-center font-black text-[9px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'} uppercase tracking-tight`}>
-                                    {ICAO_CITIES[row.destination] || 'EXTERIOR'}
+                                    {getCityName(row.destination || '', destinosDB)}
                                 </td>
 
                                 {/* POSITION */}
@@ -2496,7 +2477,7 @@ export const GridOps: React.FC<GridOpsProps> = ({
 
                                 {/* CITY */}
                                 <td className={`px-2 border-y border-l ${isDarkMode ? (row.id === clickedRowId ? 'border-emerald-500/80 bg-gradient-to-b from-emerald-900/60 to-emerald-800/60' : 'border-slate-700/50 bg-gradient-to-b from-slate-800/50 to-slate-900/80 group-hover:from-emerald-900/30 group-hover:to-emerald-800/30 group-hover:border-emerald-500/30') : (row.id === clickedRowId ? 'border-emerald-400 bg-emerald-300' : 'border-slate-200 bg-white group-hover:bg-emerald-200')} transition-all text-center font-black text-[9px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'} uppercase tracking-tight`}>
-                                    {ICAO_CITIES[row.destination] || 'EXTERIOR'}
+                                    {getCityName(row.destination || '', destinosDB)}
                                 </td>
 
                                 {/* POSITION */}

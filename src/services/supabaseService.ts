@@ -502,15 +502,14 @@ export const getBaseMeshFlights = async (dateRef: string): Promise<MeshFlight[]>
   if (!isSupabaseConfigured()) return [];
   
   let { data, error } = await supabase
-    .from('flights')
+    .from('malha_dia')
     .select('*')
-    .eq('date_ref', dateRef)
-    .eq('status', 'PRÉ') // Apenas os da Malha Base
+    .eq('date', dateRef)
     .order('etd');
     
   if (error && error.message.includes("does not exist")) {
      console.warn("[Supabase] fallback para getBaseMesh...", error.message);
-     const fallback = await supabase.from('flights').select('*').eq('date_ref', dateRef);
+     const fallback = await supabase.from('malha_dia').select('*');
      data = fallback.data;
      error = fallback.error;
   }
@@ -562,7 +561,7 @@ export const upsertBaseMeshFlights = async (flightsBase: MeshFlight[]): Promise<
   
   let payload = flightsBase.map(f => {
     const obj: any = {
-      date_ref: f.date,
+      date: f.date,
       airline: f.airline,
       airline_code: f.airlineCode,
       flight_number: f.flightNumber,
@@ -574,8 +573,7 @@ export const upsertBaseMeshFlights = async (flightsBase: MeshFlight[]): Promise<
       position_id: f.positionId,
       actual_arrival_time: cleanTime(f.actualArrivalTime),
       model: f.model,
-      updated_at: new Date().toISOString(),
-      status: 'PRÉ'
+      updated_at: new Date().toISOString()
     };
     if (f.id && !f.id.toString().startsWith('mesh-')) {
        obj.id = f.id;
@@ -585,11 +583,11 @@ export const upsertBaseMeshFlights = async (flightsBase: MeshFlight[]): Promise<
 
   let maxAttempts = 10;
   while (maxAttempts > 0) {
-    const { data, error } = await supabase.from('flights').upsert(payload).select('id');
+    const { data, error } = await supabase.from('malha_dia').upsert(payload).select('id');
     
     if (!error) {
        if (data && data.length === 0 && payload.length > 0) {
-           throw new Error("A inserção falhou silenciosamente no Supabase. Verifique se as políticas de segurança (RLS) do banco de dados permitem (ou desabilite o RLS da tabela 'flights').");
+           throw new Error("A inserção falhou silenciosamente no Supabase. Verifique se as políticas de segurança (RLS) do banco de dados permitem (ou desabilite o RLS da tabela 'malha_dia').");
        }
        return;
     }
@@ -606,7 +604,7 @@ export const upsertBaseMeshFlights = async (flightsBase: MeshFlight[]): Promise<
     }
 
     if (missingCol) {
-       console.warn(`[Supabase] column '${missingCol}' does not exist in flights, retrying without it...`);
+       console.warn(`[Supabase] column '${missingCol}' does not exist in malha_dia, retrying without it...`);
        payload = payload.map(p => {
            const newP = { ...p } as any;
            delete newP[missingCol];
@@ -614,18 +612,18 @@ export const upsertBaseMeshFlights = async (flightsBase: MeshFlight[]): Promise<
        });
        maxAttempts--;
        if (maxAttempts === 0) {
-           throw new Error(`O banco de dados 'flights' está faltando muitas colunas essenciais. Erro original: ${error.message}`);
+           throw new Error(`O banco de dados 'malha_dia' está faltando muitas colunas essenciais. Erro original: ${error.message}`);
        }
        continue;
     }
 
-    throw new Error(`Erro ao inserir na flights (Malha Base): ${error.message}`);
+    throw new Error(`Erro ao inserir na malha_dia (Malha Base): ${error.message}`);
   }
 };
 
 export const clearBaseMeshFlights = async (dateRef: string): Promise<void> => {
    if (!isSupabaseConfigured()) return;
-   const { error } = await supabase.from('flights').delete().eq('date_ref', dateRef).eq('status', 'PRÉ');
+   const { error } = await supabase.from('malha_dia').delete().eq('date', dateRef);
    if (error) {
       console.error(`[Supabase] Error clearing base mesh for ${dateRef}:`, error.message);
       throw error;
@@ -634,7 +632,7 @@ export const clearBaseMeshFlights = async (dateRef: string): Promise<void> => {
 
 export const clearAllBaseMeshFlights = async (): Promise<void> => {
    if (!isSupabaseConfigured()) return;
-   const { error } = await supabase.from('flights').delete().eq('status', 'PRÉ');
+   const { error } = await supabase.from('malha_dia').delete().neq('id', '00000000-0000-0000-0000-000000000000');
    if (error) {
       console.error('[Supabase] Error clearing all base mesh flights:', error.message);
       throw error;
