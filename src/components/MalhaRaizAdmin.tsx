@@ -52,10 +52,14 @@ export const MalhaRaizAdmin: React.FC<MalhaRaizAdminProps> = ({ isDarkMode }) =>
         const data = await getRootMesh();
         const { data: companies } = await supabase.from('companhias').select('airline, airline_code');
         
+        let officialAirlines: string[] = [];
         if (companies) {
             const mapping: Record<string, string> = {};
             companies.forEach(c => {
-                if (c.airline_code) mapping[c.airline_code.toUpperCase()] = c.airline.toUpperCase();
+                if (c.airline_code) {
+                    mapping[c.airline_code.toUpperCase()] = c.airline.toUpperCase();
+                    officialAirlines.push(c.airline_code.toUpperCase());
+                }
             });
             setCompanyNames(mapping);
         }
@@ -67,7 +71,9 @@ export const MalhaRaizAdmin: React.FC<MalhaRaizAdminProps> = ({ isDarkMode }) =>
                 return !flightNum.includes('ENCH') && !flightNum.includes('ENCHIMENTO') && cia !== 'ENCH';
             });
             setFlights(validData);
-            const uniqueAirlines = Array.from(new Set(validData.map(a => a.airlineCode))).filter(a => Boolean(a) && a !== 'EM GERAL').sort();
+            const usedAirlines = validData.map(a => a.airlineCode);
+            const uniqueAirlines = Array.from(new Set([...officialAirlines, ...usedAirlines]))
+                .filter(a => Boolean(a) && a !== 'EM GERAL').sort();
             setAirlines(uniqueAirlines);
             if (!activeAirline) {
                 setActiveAirline('EM GERAL');

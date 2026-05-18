@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Save, Plane, Send, Search, Edit2, Trash2, Play, ClipboardList, Plus, Ban, AlertCircle, MoreVertical, Settings, ChevronDown, RefreshCw, Upload, ChevronLeft, ChevronRight, Calendar, Copy, Network } from 'lucide-react';
+import { X, Save, Plane, Send, Search, Edit2, Trash2, Play, ClipboardList, Plus, Ban, AlertCircle, MoreVertical, Settings, ChevronDown, RefreshCw, Upload, Download, ChevronLeft, ChevronRight, Calendar, Copy, Network } from 'lucide-react';
 import { FlightData, FlightStatus, AircraftType, MeshFlight, StaticFlight } from '../types';
 import { getCurrentShift, getLocalDateStr } from '../utils/shiftUtils';
 import * as XLSX from 'xlsx';
@@ -152,11 +152,11 @@ const formatImportTime = (rawVal: string) => {
 };
 
 const COLUMNS: { key: MeshField | any; label: string; width: string; isVariable: boolean }[] = [
-  { key: 'airline', label: 'Cia', width: 'w-[140px]', isVariable: false },
-  { key: 'flightNumber', label: 'V.Cheg', width: 'w-[75px]', isVariable: false },
+  { key: 'airline', label: 'Cia', width: 'w-[140px]', isVariable: true },
+  { key: 'flightNumber', label: 'V.Cheg', width: 'w-[75px]', isVariable: true },
   { key: 'departureFlightNumber', label: 'V.Saída', width: 'w-[75px]', isVariable: true },
-  { key: 'destination', label: 'Destino', width: 'w-[75px]', isVariable: false },
-  { key: 'etd', label: 'ETD', width: 'w-[65px]', isVariable: false },
+  { key: 'destination', label: 'ICAO', width: 'w-[75px]', isVariable: true },
+  { key: 'etd', label: 'ETD', width: 'w-[65px]', isVariable: true },
   { key: 'registration', label: 'Prefixo', width: 'w-[110px]', isVariable: true },
   { key: 'model', label: 'Modelo', width: 'w-[90px]', isVariable: false },
   { key: 'eta', label: 'ETA', width: 'w-[75px]', isVariable: true },
@@ -198,7 +198,7 @@ export const RootMesh: React.FC<RootMeshProps> = ({
   const [destinosDB, setDestinosDB] = useState<StaticFlight[]>([]);
 
   useEffect(() => {
-    supabase.from('aircrafts').select('*').then(res => {
+    supabase.from('aeronaves').select('*').then(res => {
         if (res.data) setAircraftsDB(res.data);
     });
     getDestinos().then(destinos => {
@@ -316,6 +316,8 @@ export const RootMesh: React.FC<RootMeshProps> = ({
         if (attemptMatch) {
             newValue = attemptMatch.prefix;
             autoModel = attemptMatch.model && attemptMatch.model !== '--' ? attemptMatch.model : '';
+            const airlineUpper = attemptMatch.airline.toUpperCase();
+            autoAirline = attemptMatch.airline;
         } else if (cleanInput.length >= 3) {
             autoModel = '';
         }
@@ -351,7 +353,18 @@ export const RootMesh: React.FC<RootMeshProps> = ({
         });
         if (match) {
             autoDestination = match.destination;
-            autoAirline = match.airline;
+            autoAirline = match.airline || autoAirline;
+        }
+        
+        // If no airline was found but the flight number starts with known letters, guess it
+        if (!autoAirline && normalizedInput.length >= 2) {
+            const prefix = normalizedInput.slice(0, 2);
+            if (prefix === 'LA') autoAirline = 'LATAM';
+            else if (prefix === 'G3' || prefix === 'RG') autoAirline = 'GOL';
+            else if (prefix === 'AD') autoAirline = 'AZUL';
+            else if (prefix === 'CM') autoAirline = 'COPA';
+            else if (prefix === 'TP') autoAirline = 'TAP';
+            else if (prefix === 'AA') autoAirline = 'AMERICAN';
         }
     }
     

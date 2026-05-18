@@ -50,12 +50,18 @@ export const AircraftsAdmin: React.FC<AircraftsAdminProps> = ({ isDarkMode }) =>
   const fetchAircrafts = async () => {
     setIsLoading(true);
     try {
-        const { data, error } = await supabase.from('aeronaves').select('*').order('prefix');
-        if (error) {
-            console.error('Error fetching aircrafts', error);
-        } else if (data) {
-            setAircrafts(data as AircraftType[]);
-            const uniqueAirlines = Array.from(new Set(data.map(a => a.airline))).filter(a => Boolean(a) && a !== 'EM GERAL').sort();
+        const [acRes, ciaRes] = await Promise.all([
+            supabase.from('aeronaves').select('*').order('prefix'),
+            supabase.from('companhias').select('airline, airline_code').order('airline')
+        ]);
+        if (acRes.error) {
+            console.error('Error fetching aircrafts', acRes.error);
+        } else if (acRes.data) {
+            setAircrafts(acRes.data as AircraftType[]);
+            const officialAirlines = ciaRes.data ? ciaRes.data.map(c => c.airline_code || c.airline).filter(Boolean) : [];
+            const usedAirlines = acRes.data.map(a => a.airline);
+            const uniqueAirlines = Array.from(new Set([...officialAirlines, ...usedAirlines]))
+                .filter(a => Boolean(a) && a !== 'EM GERAL').sort();
             setAirlines(uniqueAirlines);
             if (!activeAirline) {
                 setActiveAirline('EM GERAL');

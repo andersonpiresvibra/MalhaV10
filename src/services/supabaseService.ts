@@ -70,21 +70,56 @@ let vehiclesCache: { id: string; fleetNumber: string }[] = [];
 
 export const getDestinos = async (): Promise<any[]> => {
   if (!isSupabaseConfigured()) return [];
-  const { data, error } = await supabase.from('destinos').select('*');
-  if (error) throw error;
   
-  if (data && data.length > 0) {
-      return data.map((d: any) => ({
+  // 1. Pega tabela de destinos estáticos (ICAO -> Cidade)
+  const { data: destData, error: destError } = await supabase.from('destinos').select('*');
+  let destinosBase = destData || [];
+  
+  // 2. Tenta puxar inteligência de voos passados da malha operacional para ajudar no auto-complete (limita aos ultimos 500 para ser rapido mas util)
+  const { data: voosData, error: voosError } = await supabase
+    .from('malha_operacional')
+    .select('flight_number, departure_flight_number, destination, airline_code, airline')
+    .limit(1000)
+    .order('created_at', { ascending: false });
+    
+  let allDestinos: any[] = [];
+  
+  // Array para mapeamento rapido de ICAO -> City
+  const mapIcaoToCity = (icao: string) => {
+     const match = destinosBase.find(d => d.icao === icao);
+     return match ? match.city : '';
+  };
+
+  if (destinosBase.length > 0) {
+      allDestinos = destinosBase.map((d: any) => ({
           ...d,
           flightNumber: d.flightNumber || d.flight_number || d.voo || d.prefixo || d.voo_chegada || d.voo_saida,
           departureFlightNumber: d.departureFlightNumber || d.voo_saida || d.departure_flight_number,
           airlineCode: d.airlineCode || d.airline_code || d.cia_cod || d.codigo_cia,
           airline: d.airline || d.cia || d.airline_name || d.companhia || d.empresa,
-          destination: d.destination || d.destino || d.dest || d.cidade || d.city
+          destination: d.destination || d.destino || d.dest || d.cidade || d.city || d.icao
       }));
   }
   
-  return [];
+  if (voosData && voosData.length > 0) {
+      // Remover duplicatas
+      const unicos = new Map();
+      voosData.forEach(v => {
+          if (v.departure_flight_number && !unicos.has(v.departure_flight_number)) {
+              unicos.set(v.departure_flight_number, {
+                  flightNumber: v.flight_number,
+                  departureFlightNumber: v.departure_flight_number,
+                  airlineCode: v.airline_code,
+                  airline: v.airline,
+                  destination: v.destination,
+                  city: mapIcaoToCity(v.destination)
+              });
+          }
+      });
+      allDestinos = [...allDestinos, ...Array.from(unicos.values())];
+  }
+  
+  return allDestinos;
 };
 
 export const getVehicles = async (): Promise<Vehicle[]> => {

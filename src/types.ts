@@ -152,6 +152,7 @@ export interface FlightData {
   departureFlightNumber?: string; // V. Saida
   airline: string;
   airlineCode: string;
+  companhia_id?: string; // Foreign Key para a tabela companhias
   model: string;
   registration: string;
   origin: string;
@@ -206,6 +207,7 @@ export interface MeshFlight {
   id: string;
   airline: string;
   airlineCode: string;
+  companhia_id?: string; // Foreign Key para a tabela companhias
   departureFlightNumber: string;
   destination: string;
   etd: string;
@@ -240,6 +242,7 @@ export interface AircraftType {
   model: string;
   prefix: string;
   airline: string;
+  companhia_id?: string; // Foreign Key para a tabela companhias
   missing_cap?: boolean;
   defective_door?: boolean;
   defective_panel?: boolean;

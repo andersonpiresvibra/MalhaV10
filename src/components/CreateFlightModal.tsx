@@ -49,7 +49,7 @@ export const CreateFlightModal: React.FC<CreateFlightModalProps> = ({ onClose, o
 
   useEffect(() => {
     // Fetch aircrafts from DB for auto-complete magic
-    supabase.from('aircrafts').select('*').then(res => {
+    supabase.from('aeronaves').select('*').then(res => {
       if (res.data) setAircraftsDB(res.data as AircraftType[]);
     });
     getDestinos().then(destinos => {
@@ -66,14 +66,42 @@ export const CreateFlightModal: React.FC<CreateFlightModalProps> = ({ onClose, o
         const match = destinosDB.find(d => 
             String(d.flightNumber || '').replace(/[^A-Z0-9]/ig, '').toUpperCase() === normalizedInput ||
             String(d.departureFlightNumber || '').replace(/[^A-Z0-9]/ig, '').toUpperCase() === normalizedInput ||
-            String(d.voo || '').replace(/[^A-Z0-9]/ig, '').toUpperCase() === normalizedInput
+            String((d as any).voo || '').replace(/[^A-Z0-9]/ig, '').toUpperCase() === normalizedInput
         );
+        
+        let autoAirlineCode = formData.airlineCode;
         if (match) {
+            // Se encontrar na base, puxa a companhia também
+            if (match.airline) {
+                const airlineUpperExact = match.airline.toUpperCase();
+                if (airlineUpperExact.includes('GOL')) autoAirlineCode = 'RG';
+                else if (airlineUpperExact.includes('LATAM')) autoAirlineCode = 'LA';
+                else if (airlineUpperExact.includes('AZUL')) autoAirlineCode = 'AD';
+                else autoAirlineCode = match.airlineCode || match.airline.slice(0, 3).toUpperCase();
+            }
             setFormData(prev => ({ 
                 ...prev, 
                 [name]: newValue,
                 destination: match.destination,
-                city: match.city
+                city: match.city,
+                airlineCode: autoAirlineCode
+            }));
+            return;
+        } else {
+            // Se não encontrou, tenta inferir a companhia pelo prefixo (mínimo de 2 letras)
+            if (normalizedInput.length >= 2) {
+                const prefix = normalizedInput.slice(0, 2);
+                if (prefix === 'LA') autoAirlineCode = 'LA';
+                else if (prefix === 'G3' || prefix === 'RG') autoAirlineCode = 'RG';
+                else if (prefix === 'AD') autoAirlineCode = 'AD';
+                else if (prefix === 'CM') autoAirlineCode = 'CM';
+                else if (prefix === 'TP') autoAirlineCode = 'TP';
+                else if (prefix === 'AA') autoAirlineCode = 'AA';
+            }
+            setFormData(prev => ({ 
+                ...prev, 
+                [name]: newValue,
+                airlineCode: autoAirlineCode || prev.airlineCode
             }));
             return;
         }

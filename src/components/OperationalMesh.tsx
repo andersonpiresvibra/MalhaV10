@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Save, Plane, Send, Search, Edit2, Trash2, Play, ClipboardList, Plus, Ban, AlertCircle, MoreVertical, Settings, ChevronDown, RefreshCw, Upload, ChevronLeft, ChevronRight, Calendar, Database, History } from 'lucide-react';
+import { X, Save, Plane, Send, Search, Edit2, Trash2, Play, ClipboardList, Plus, Ban, AlertCircle, MoreVertical, Settings, ChevronDown, RefreshCw, Upload, Download, ChevronLeft, ChevronRight, Calendar, Database, History } from 'lucide-react';
 import { FlightData, FlightStatus, AircraftType, MeshFlight, StaticFlight } from '../types';
 import { getCurrentShift, getLocalDateStr } from '../utils/shiftUtils';
 import * as XLSX from 'xlsx';
@@ -158,10 +158,10 @@ const formatImportTime = (rawVal: string) => {
 };
 
 const COLUMNS: { key: MeshField; label: string; width: string; isVariable: boolean }[] = [
-  { key: 'airline', label: 'Cia', width: 'w-24', isVariable: false },
+  { key: 'airline', label: 'Cia', width: 'w-24', isVariable: true },
   { key: 'flightNumber', label: 'V.Cheg', width: 'w-24', isVariable: true },
   { key: 'departureFlightNumber', label: 'V.Saída', width: 'w-24', isVariable: true },
-  { key: 'destination', label: 'Destino', width: 'w-24', isVariable: false },
+  { key: 'destination', label: 'ICAO', width: 'w-24', isVariable: true },
   { key: 'etd', label: 'ETD', width: 'w-20', isVariable: true },
   { key: 'registration', label: 'Prefixo', width: 'w-28', isVariable: true },
   { key: 'model', label: 'Modelo', width: 'w-24', isVariable: false },
@@ -205,7 +205,7 @@ export const OperationalMesh: React.FC<OperationalMeshProps> = ({
   const [destinosDB, setDestinosDB] = useState<StaticFlight[]>([]);
 
   useEffect(() => {
-    supabase.from('aircrafts').select('*').then(res => {
+    supabase.from('aeronaves').select('*').then(res => {
       if (res.data) setAircraftsDB(res.data as AircraftType[]);
     });
     getDestinos().then(destinos => {
@@ -393,7 +393,16 @@ export const OperationalMesh: React.FC<OperationalMeshProps> = ({
             autoDestination = match.destination;
             autoAirline = match.airline;
         } else {
-            // Keep empty or any default behavior
+            // Se não encontrou destino na malha, mas pode inferir a companhia pelo prefixo
+            if (normalizedInput.length >= 2) {
+                const prefix = normalizedInput.slice(0, 2);
+                if (prefix === 'LA') autoAirline = 'LATAM';
+                else if (prefix === 'G3' || prefix === 'RG') autoAirline = 'GOL';
+                else if (prefix === 'AD') autoAirline = 'AZUL';
+                else if (prefix === 'CM') autoAirline = 'COPA';
+                else if (prefix === 'TP') autoAirline = 'TAP';
+                else if (prefix === 'AA') autoAirline = 'AMERICAN';
+            }
         }
     }
     
