@@ -811,6 +811,7 @@ const App: React.FC = () => {
                     isDarkMode={isDarkMode} 
                     globalVehicles={globalVehicles}
                     onUpdateGlobalVehicles={setGlobalVehicles}
+                    globalOperators={globalOperators}
                    />
                 )}
                 {view === 'AIRCRAFTS_ADMIN' && (

@@ -126,6 +126,18 @@ export const updateVehicleOperator = async (vehicleFleetNumber: string | null, o
     return;
   }
   
+  // Desvincula o veículo informado de qualquer operador se operatorId for nulo e vehicleFleetNumber for informado.
+  if (vehicleFleetNumber && operatorId === null) {
+      const cleanVehicleId = vehicleFleetNumber.replace('SRV-', '').replace('CTA-', '');
+      const vehicle = vehiclesCache.find(v => v.fleetNumber === cleanVehicleId || v.id === vehicleFleetNumber);
+      if (vehicle) {
+        await supabase.from('frotas').update({ operator_id: null }).eq('id', vehicle.id);
+      } else {
+        await supabase.from('frotas').update({ operator_id: null }).eq('id', vehicleFleetNumber); // Fallback caso venha ID direto
+      }
+      return;
+  }
+  
   if (vehicleFleetNumber && operatorId) {
     // 1. Remove qualquer outro veículo que esse operador possa ter
     await supabase.from('frotas').update({ operator_id: null }).eq('operator_id', operatorId);
@@ -133,10 +145,14 @@ export const updateVehicleOperator = async (vehicleFleetNumber: string | null, o
     // 2. Vincula o novo
     const cleanVehicleId = vehicleFleetNumber.replace('SRV-', '').replace('CTA-', '');
     const vehicle = vehiclesCache.find(v => v.fleetNumber === cleanVehicleId || v.id === vehicleFleetNumber);
-    if (!vehicle) return;
     
-    // Desvincula quem estava com este veículo
-    await supabase.from('frotas').update({ operator_id: operatorId }).eq('id', vehicle.id);
+    if (vehicle) {
+      // Vincula usando o id do veículo do DB
+      await supabase.from('frotas').update({ operator_id: operatorId }).eq('id', vehicle.id);
+    } else {
+      // Fallback
+      await supabase.from('frotas').update({ operator_id: operatorId }).eq('id', vehicleFleetNumber);
+    }
   }
 };
 
@@ -241,7 +257,7 @@ export const getAircrafts = async (): Promise<AircraftType[]> => {
 export const getFlights = async (dateRef: string): Promise<FlightData[]> => {
   if (!isSupabaseConfigured()) return [];
   
-  let query = supabase.from('flights').select('*, operadores_geral(war_name), frotas(fleet_number)').eq('date_ref', dateRef);
+  let query = supabase.from('malha_operacional').select('*, operadores_geral(war_name), frotas(fleet_number)').eq('date_ref', dateRef);
   let { data, error } = await query;
     
   
@@ -268,10 +284,13 @@ export const getFlights = async (dateRef: string): Promise<FlightData[]> => {
     positionId: f.position_id,
     positionType: f.position_type as any,
     pitId: f.pit_id,
+    wingSide: f.wing_side as any,
     fuelStatus: f.fuel_status || 0,
     status: f.status as FlightStatus,
-    operator: f.operadores_geral?.war_name || undefined,
+    operator: f.operadores_geral?.war_name || f.operator, // Fallback for backwards comp
     operatorId: f.operator_id || undefined,
+    supportOperator: f.support_operator || undefined,
+    supportOperatorId: f.support_operator_id || undefined,
     fleet: f.frotas?.fleet_number || undefined,
     vehicleId: f.vehicle_id || undefined,
     vehicleType: f.vehicle_type as any,
@@ -283,6 +302,7 @@ export const getFlights = async (dateRef: string): Promise<FlightData[]> => {
     endTime: f.end_time ? new Date(f.end_time) : undefined,
     assignmentTime: f.assignment_time ? new Date(f.assignment_time) : undefined,
     assignedByLt: f.assigned_by_lt,
+    isExcludedFromQueue: f.is_excluded_from_queue,
     logs: f.logs || [],
     report: f.report || {}
   })) as FlightData[];
@@ -291,7 +311,7 @@ export const getFlights = async (dateRef: string): Promise<FlightData[]> => {
 export const deleteAllFlightsByDate = async (dateRef: string): Promise<void> => {
   if (!isSupabaseConfigured()) return;
   const { error } = await supabase
-    .from('flights')
+    .from('malha_operacional')
     .delete()
     .eq('date_ref', dateRef);
     
@@ -304,7 +324,7 @@ export const deleteAllFlightsByDate = async (dateRef: string): Promise<void> => 
 export const deleteInactiveFlightsByDate = async (dateRef: string): Promise<void> => {
   if (!isSupabaseConfigured()) return;
   const { error } = await supabase
-    .from('flights')
+    .from('malha_operacional')
     .delete()
     .eq('date_ref', dateRef)
     .is('operator_id', null)
@@ -335,10 +355,14 @@ export const upsertFlight = async (flight: FlightData): Promise<void> => {
     position_id: flight.positionId,
     position_type: flight.positionType || null,
     pit_id: flight.pitId || null,
+    wing_side: flight.wingSide || null,
     fuel_status: flight.fuelStatus,
     status: flight.status,
     operator_id: flight.operatorId || operatorsCache.find(o => o.warName === flight.operator)?.id || null,
-    vehicle_id: flight.vehicleId || vehiclesCache.find(v => v.fleetNumber === flight.fleet)?.id || null,
+    support_operator_id: flight.supportOperatorId || null,
+    support_operator: flight.supportOperator || null,
+    vehicle_id: flight.vehicleId || (flight.fleet ? vehiclesCache.find(v => v.fleetNumber === String(flight.fleet).replace('SRV-', '').replace('CTA-', ''))?.id : null) || null,
+    vehicle_type: flight.vehicleType || null,
     volume: flight.volume || 0,
     is_on_ground: flight.isOnGround || false,
     delay_justification: flight.delayJustification || null,
@@ -347,6 +371,7 @@ export const upsertFlight = async (flight: FlightData): Promise<void> => {
     end_time: flight.endTime?.toISOString() || null,
     assignment_time: flight.assignmentTime?.toISOString() || null,
     assigned_by_lt: flight.assignedByLt || null,
+    is_excluded_from_queue: flight.isExcludedFromQueue || false,
     report: flight.report || {},
     logs: flight.logs || [],
     updated_at: new Date().toISOString()
@@ -356,20 +381,20 @@ export const upsertFlight = async (flight: FlightData): Promise<void> => {
      payload.id = flight.id;
   }
 
-  let { data, error } = await supabase.from('flights').upsert([payload]).select('id');
+  let { data, error } = await supabase.from('malha_operacional').upsert([payload]).select('id');
   
 
 
   if (!error && data && data.length === 0) {
       console.warn("[Supabase] Upsert returned empty data. RLS might be silently blocking.");
-      throw new Error("A inserção na malha operacional falhou silenciosamente no Supabase. Verifique se as políticas de segurança (RLS) da tabela 'flights' permitem INSERT/UPDATE.");
+      throw new Error("A inserção na malha operacional falhou silenciosamente no Supabase. Verifique se as políticas de segurança (RLS) da tabela 'malha_operacional' permitem INSERT/UPDATE.");
   }
   
   if (error) {
     if (error.message.includes("Could not find the table")) {
-        throw new Error(`ESTRUTURA DA TABELA INVÁLIDA!\nVá ao SQL Editor no Supabase e rode: CREATE TABLE flights ( id UUID DEFAULT gen_random_uuid() PRIMARY KEY, date_ref text, flight_number text, airline text, airline_code text, model text, registration text, departure_flight_number text, origin text, destination text, eta text, etd text, actual_arrival_time text, position_id text, position_type text, pit_id text, fuel_status text, status text, designation_time timestamp, start_time timestamp, end_time timestamp, assignment_time timestamp, assigned_by_lt text, report jsonb, updated_at timestamp );\n\nErro original: ${error.message}`);
+        throw new Error(`ESTRUTURA DA TABELA INVÁLIDA!\nVá ao SQL Editor no Supabase e rode: CREATE TABLE malha_operacional ( id UUID DEFAULT gen_random_uuid() PRIMARY KEY, date_ref text, flight_number text, airline text, airline_code text, model text, registration text, departure_flight_number text, origin text, destination text, eta text, etd text, actual_arrival_time text, position_id text, position_type text, pit_id text, fuel_status text, status text, designation_time timestamp, start_time timestamp, end_time timestamp, assignment_time timestamp, assigned_by_lt text, report jsonb, updated_at timestamp );\n\nErro original: ${error.message}`);
     } else if (error.message.includes('Could not find') || error.message.includes('does not exist')) {
-        throw new Error(`ESTRUTURA DA TABELA INVÁLIDA (flights)!\nVá ao SQL Editor no Supabase e rode: ALTER TABLE flights ADD COLUMN IF NOT EXISTS date_ref text, ADD COLUMN IF NOT EXISTS airline text, ADD COLUMN IF NOT EXISTS airline_code text, ADD COLUMN IF NOT EXISTS model text, ADD COLUMN IF NOT EXISTS registration text, ADD COLUMN IF NOT EXISTS departure_flight_number text, ADD COLUMN IF NOT EXISTS origin text, ADD COLUMN IF NOT EXISTS eta text, ADD COLUMN IF NOT EXISTS etd text, ADD COLUMN IF NOT EXISTS actual_arrival_time text, ADD COLUMN IF NOT EXISTS designation_time timestamp, ADD COLUMN IF NOT EXISTS start_time timestamp, ADD COLUMN IF NOT EXISTS end_time timestamp, ADD COLUMN IF NOT EXISTS assignment_time timestamp, ADD COLUMN IF NOT EXISTS assigned_by_lt text, ADD COLUMN IF NOT EXISTS report jsonb, ADD COLUMN IF NOT EXISTS updated_at timestamp;\n\nErro original: ${error.message}`);
+        throw new Error(`ESTRUTURA DA TABELA INVÁLIDA (malha_operacional)!\nVá ao SQL Editor no Supabase e rode: ALTER TABLE malha_operacional ADD COLUMN IF NOT EXISTS date_ref text, ADD COLUMN IF NOT EXISTS airline text, ADD COLUMN IF NOT EXISTS airline_code text, ADD COLUMN IF NOT EXISTS model text, ADD COLUMN IF NOT EXISTS registration text, ADD COLUMN IF NOT EXISTS departure_flight_number text, ADD COLUMN IF NOT EXISTS origin text, ADD COLUMN IF NOT EXISTS eta text, ADD COLUMN IF NOT EXISTS etd text, ADD COLUMN IF NOT EXISTS actual_arrival_time text, ADD COLUMN IF NOT EXISTS designation_time timestamp, ADD COLUMN IF NOT EXISTS start_time timestamp, ADD COLUMN IF NOT EXISTS end_time timestamp, ADD COLUMN IF NOT EXISTS assignment_time timestamp, ADD COLUMN IF NOT EXISTS assigned_by_lt text, ADD COLUMN IF NOT EXISTS report jsonb, ADD COLUMN IF NOT EXISTS updated_at timestamp;\n\nErro original: ${error.message}`);
     }
     console.error('[Supabase] Error upserting flight:', error.message);
     throw error;
@@ -378,7 +403,7 @@ export const upsertFlight = async (flight: FlightData): Promise<void> => {
 
 export const deleteFlight = async (flightId: string): Promise<void> => {
   if (!isSupabaseConfigured()) return;
-  const { error } = await supabase.from('flights').delete().eq('id', flightId);
+  const { error } = await supabase.from('malha_operacional').delete().eq('id', flightId);
   if (error) {
     console.error('[Supabase] Error deleting flight:', error.message);
     throw error;
@@ -659,10 +684,14 @@ export const bulkInsertFlights = async (flights: FlightData[]): Promise<void> =>
       position_id: flight.positionId,
       position_type: flight.positionType || null,
       pit_id: flight.pitId || null,
+      wing_side: flight.wingSide || null,
       fuel_status: flight.fuelStatus,
       status: flight.status,
       operator_id: flight.operatorId || operatorsCache.find(o => o.warName === flight.operator)?.id || null,
-      vehicle_id: flight.vehicleId || vehiclesCache.find(v => v.fleetNumber === flight.fleet)?.id || null,
+      support_operator_id: flight.supportOperatorId || null,
+      support_operator: flight.supportOperator || null,
+      vehicle_id: flight.vehicleId || (flight.fleet ? vehiclesCache.find(v => v.fleetNumber === String(flight.fleet).replace('SRV-', '').replace('CTA-', ''))?.id : null) || null,
+      vehicle_type: flight.vehicleType || null,
       volume: flight.volume || 0,
       is_on_ground: flight.isOnGround || false,
       delay_justification: flight.delayJustification || null,
@@ -671,6 +700,7 @@ export const bulkInsertFlights = async (flights: FlightData[]): Promise<void> =>
       end_time: flight.endTime?.toISOString() || null,
       assignment_time: flight.assignmentTime?.toISOString() || null,
       assigned_by_lt: flight.assignedByLt || null,
+      is_excluded_from_queue: flight.isExcludedFromQueue || false,
       report: flight.report || {},
       logs: flight.logs || [],
       updated_at: new Date().toISOString()
@@ -684,23 +714,23 @@ export const bulkInsertFlights = async (flights: FlightData[]): Promise<void> =>
   const chunkSize = 100;
   for (let i = 0; i < payload.length; i += chunkSize) {
     const chunk = payload.slice(i, i + chunkSize);
-    let { data, error } = await supabase.from('flights').upsert(chunk).select('id');
+    let { data, error } = await supabase.from('malha_operacional').upsert(chunk).select('id');
     
 
 
     if (!error) {
        if (data && data.length === 0 && chunk.length > 0) {
            console.warn("[Supabase] Bulk Upsert returned empty data. This might be due to RLS policies silently blocking.");
-           throw new Error("A inserção na malha operacional falhou silenciosamente no Supabase. Verifique se as políticas de segurança (RLS - Row Level Security) do banco de dados (tabela 'flights') permitem as permissões de INSERT/UPDATE.");
+           throw new Error("A inserção na malha operacional falhou silenciosamente no Supabase. Verifique se as políticas de segurança (RLS - Row Level Security) do banco de dados (tabela 'malha_operacional') permitem as permissões de INSERT/UPDATE.");
        }
     }
 
     if (error) {
         console.error('[Supabase] Error bulk inserting flights chunk:', error.message);
         if (error.message.includes("Could not find the table")) {
-            throw new Error(`ESTRUTURA DA TABELA INVÁLIDA!\nVá ao SQL Editor no Supabase e rode: CREATE TABLE flights ( id UUID DEFAULT gen_random_uuid() PRIMARY KEY, date_ref text, flight_number text, airline text, airline_code text, model text, registration text, departure_flight_number text, origin text, destination text, eta text, etd text, actual_arrival_time text, position_id text, position_type text, pit_id text, fuel_status text, status text, designation_time timestamp, start_time timestamp, end_time timestamp, assignment_time timestamp, assigned_by_lt text, report jsonb, updated_at timestamp );\n\nErro original: ${error.message}`);
+            throw new Error(`ESTRUTURA DA TABELA INVÁLIDA!\nVá ao SQL Editor no Supabase e rode: CREATE TABLE malha_operacional ( id UUID DEFAULT gen_random_uuid() PRIMARY KEY, date_ref text, flight_number text, airline text, airline_code text, model text, registration text, departure_flight_number text, origin text, destination text, eta text, etd text, actual_arrival_time text, position_id text, position_type text, pit_id text, fuel_status text, status text, designation_time timestamp, start_time timestamp, end_time timestamp, assignment_time timestamp, assigned_by_lt text, report jsonb, updated_at timestamp );\n\nErro original: ${error.message}`);
         } else if (error.message.includes('Could not find') || error.message.includes('does not exist')) {
-            throw new Error(`ESTRUTURA DA TABELA INVÁLIDA (flights)!\nVá ao SQL Editor no Supabase e rode: ALTER TABLE flights ADD COLUMN IF NOT EXISTS date_ref text, ADD COLUMN IF NOT EXISTS airline text, ADD COLUMN IF NOT EXISTS airline_code text, ADD COLUMN IF NOT EXISTS model text, ADD COLUMN IF NOT EXISTS registration text, ADD COLUMN IF NOT EXISTS departure_flight_number text, ADD COLUMN IF NOT EXISTS origin text, ADD COLUMN IF NOT EXISTS eta text, ADD COLUMN IF NOT EXISTS etd text, ADD COLUMN IF NOT EXISTS actual_arrival_time text, ADD COLUMN IF NOT EXISTS designation_time timestamp, ADD COLUMN IF NOT EXISTS start_time timestamp, ADD COLUMN IF NOT EXISTS end_time timestamp, ADD COLUMN IF NOT EXISTS assignment_time timestamp, ADD COLUMN IF NOT EXISTS assigned_by_lt text, ADD COLUMN IF NOT EXISTS report jsonb, ADD COLUMN IF NOT EXISTS updated_at timestamp;\n\nErro original: ${error.message}`);
+            throw new Error(`ESTRUTURA DA TABELA INVÁLIDA (malha_operacional)!\nVá ao SQL Editor no Supabase e rode: ALTER TABLE malha_operacional ADD COLUMN IF NOT EXISTS date_ref text, ADD COLUMN IF NOT EXISTS airline text, ADD COLUMN IF NOT EXISTS airline_code text, ADD COLUMN IF NOT EXISTS model text, ADD COLUMN IF NOT EXISTS registration text, ADD COLUMN IF NOT EXISTS departure_flight_number text, ADD COLUMN IF NOT EXISTS origin text, ADD COLUMN IF NOT EXISTS eta text, ADD COLUMN IF NOT EXISTS etd text, ADD COLUMN IF NOT EXISTS actual_arrival_time text, ADD COLUMN IF NOT EXISTS designation_time timestamp, ADD COLUMN IF NOT EXISTS start_time timestamp, ADD COLUMN IF NOT EXISTS end_time timestamp, ADD COLUMN IF NOT EXISTS assignment_time timestamp, ADD COLUMN IF NOT EXISTS assigned_by_lt text, ADD COLUMN IF NOT EXISTS report jsonb, ADD COLUMN IF NOT EXISTS updated_at timestamp;\n\nErro original: ${error.message}`);
         }
         throw new Error(`Erro ao inserir na malha operacional: ${error.message}`);
     }
@@ -733,7 +763,7 @@ export const updateAerodromoConfig = async (configPayload: any): Promise<void> =
 export const clearFlightPosition = async (flightId: string): Promise<void> => {
   if (!isSupabaseConfigured()) return;
   const { error } = await supabase
-    .from('flights')
+    .from('malha_operacional')
     .update({ position_id: null, pit_id: null, position_type: null })
     .eq('id', flightId);
 
@@ -748,7 +778,7 @@ export const clearAllFlightAssignments = async (): Promise<void> => {
   
   // First get all flights that have a position
   const { data: flightsToClear, error: fetchError } = await supabase
-    .from('flights')
+    .from('malha_operacional')
     .select('id')
     .not('position_id', 'is', null);
 
@@ -761,7 +791,7 @@ export const clearAllFlightAssignments = async (): Promise<void> => {
     const flightIds = flightsToClear.map(f => f.id);
     
     const { error: updateError } = await supabase
-      .from('flights')
+      .from('malha_operacional')
       .update({ position_id: null, pit_id: null, position_type: null })
       .in('id', flightIds);
       

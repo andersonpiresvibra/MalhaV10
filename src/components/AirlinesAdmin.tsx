@@ -1,23 +1,25 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, Database, RefreshCw, Upload, Info, Image as ImageIcon, FileSpreadsheet } from 'lucide-react';
+import { Plus, Trash2, Database, RefreshCw, Upload, Info, Image as ImageIcon, FileSpreadsheet, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabase';
 import { AirlineLogo } from './AirlineLogo';
 import { AirlineType } from '../types';
+import { downloadTemplate } from '../utils/excelTemplateUtils';
 
 interface AirlinesAdminProps {
   isDarkMode: boolean;
 }
 
-type AirlineField = 'logo_url' | 'legal_name' | 'airline' | 'airline_code' | 'equipment_count' | 'flight_count' | 'is_active' | 'actions';
+type AirlineField = 'logo_url' | 'legal_name' | 'airline' | 'airline_code' | 'country' | 'equipment_count' | 'flight_count' | 'is_active' | 'actions';
 
 const COLUMNS: { key: AirlineField; label: string; width: string; isVariable: boolean }[] = [
   { key: 'logo_url', label: 'Logo', width: 'w-16', isVariable: true },
   { key: 'legal_name', label: 'Razão social', width: 'w-auto min-w-[200px]', isVariable: true },
   { key: 'airline', label: 'Comp.', width: 'w-32', isVariable: true },
   { key: 'airline_code', label: 'Cód. da Comp', width: 'w-32', isVariable: true },
-  { key: 'equipment_count', label: 'Qnt Equip.', width: 'w-24', isVariable: false },
+  { key: 'country', label: 'País/Região', width: 'w-32', isVariable: true },
+  { key: 'equipment_count', label: 'Qnt Aeron.', width: 'w-24', isVariable: false },
   { key: 'flight_count', label: 'Qnt. Voos', width: 'w-24', isVariable: false },
   { key: 'is_active', label: 'Ativo', width: 'w-24', isVariable: true },
   { key: 'actions', label: 'Ações', width: 'w-20', isVariable: false },
@@ -30,17 +32,38 @@ export const AirlinesAdmin: React.FC<AirlinesAdminProps> = ({ isDarkMode }) => {
   
   const filteredAirlines = useMemo(() => {
     if (activeTab === 'GERAL') return airlines;
-    return airlines.filter(a => a.category === activeTab);
+    
+    return airlines.filter(a => {
+        if (activeTab === 'EXECUTIVA') return a.category === 'EXECUTIVA';
+        
+        const country = a.country?.toUpperCase()?.trim() || '';
+        const isBrasil = country === 'BRASIL' || country === 'BR' || country === 'BRAZIL';
+        
+        if (activeTab === 'NACIONAL') return isBrasil;
+        if (activeTab === 'INTERNACIONAL') return !isBrasil && a.category !== 'EXECUTIVA';
+        
+        return a.category === activeTab;
+    });
   }, [airlines, activeTab]);
   
   const [showImportInstructions, setShowImportInstructions] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [feedback, setFeedback] = useState<{ msg: string; isError: boolean } | null>(null);
   const [confirmDeleteAirline, setConfirmDeleteAirline] = useState<string | null>(null);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const photoInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
   const tableRef = useRef<HTMLTableElement>(null);
+
+  const getLogoUrl = (code: string) => {
+    if (!code) return '';
+    const upper = code.toUpperCase();
+    if (upper === 'G3' || upper === 'RG') {
+        return 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/Gol_Linhas_A%C3%A9reas_Inteligentes_logo_2015.svg/320px-Gol_Linhas_A%C3%A9reas_Inteligentes_logo_2015.svg.png';
+    }
+    return `https://images.kiwi.com/airlines/64/${upper}.png`;
+  };
 
   const [focusedCell, setFocusedCell] = useState<{ rowId: string; col: number } | null>(null);
   const [editingCell, setEditingCell] = useState<{ rowId: string; col: number } | null>(null);
@@ -103,6 +126,7 @@ export const AirlinesAdmin: React.FC<AirlinesAdminProps> = ({ isDarkMode }) => {
             legal_name: '',
             airline: '',
             airline_code: '',
+            country: '',
             is_active: true,
             category: activeTab === 'GERAL' ? 'NACIONAL' : activeTab,
         };
@@ -132,10 +156,37 @@ export const AirlinesAdmin: React.FC<AirlinesAdminProps> = ({ isDarkMode }) => {
     }
   };
 
-  const handleUpdateField = async (id: string, field: keyof AirlineType, value: any) => {
-    setAirlines(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c));
+  const handleDeleteAll = async () => {
     try {
-        const { error } = await supabase.from('companhias').update({ [field]: value }).eq('id', id);
+        const { error } = await supabase.from('companhias').delete().not('id', 'is', null);
+        if (error) {
+             setFeedback({ msg: `Erro ao excluir dados: ${error.message}`, isError: true });
+        } else {
+             setAirlines([]);
+             setConfirmDeleteAll(false);
+             setFeedback({ msg: 'Todos os registros foram excluídos com sucesso.', isError: false });
+        }
+    } catch (e: any) {
+        setFeedback({ msg: `Erro de rede: ${e.message}`, isError: true });
+    }
+  };
+
+  const handleUpdateField = async (id: string, field: keyof AirlineType, value: any) => {
+    let updatePayload: any = { [field]: value };
+    
+    // Auto-update category if country changes
+    if (field === 'country') {
+        const upperCountry = String(value || '').toUpperCase();
+        if (upperCountry === 'BRASIL' || upperCountry === 'BR' || upperCountry === 'BRAZIL') {
+            updatePayload.category = 'NACIONAL';
+        } else if (value) {
+            updatePayload.category = 'INTERNACIONAL';
+        }
+    }
+
+    setAirlines(prev => prev.map(c => c.id === id ? { ...c, ...updatePayload } : c));
+    try {
+        const { error } = await supabase.from('companhias').update(updatePayload).eq('id', id);
         if (error) {
             setFeedback({ msg: `Erro ao atualizar companhia: ${error.message}`, isError: true });
             fetchAirlines(); // Revert
@@ -187,31 +238,61 @@ export const AirlinesAdmin: React.FC<AirlinesAdminProps> = ({ isDarkMode }) => {
         if (jsonData.length === 0) {
           throw new Error('A planilha está vazia.');
         }
+        
+        const normalizedData = jsonData.map(row => {
+            const normalizedRow: any = {};
+            for (const key in row) {
+                normalizedRow[key.trim().toUpperCase()] = row[key];
+            }
+            return normalizedRow;
+        });
 
         const airlinesToUpsert = [];
+        const seenCodes = new Set<string>();
         let missingCodeCount = 0;
 
-        for (const row of jsonData) {
+        for (const row of normalizedData) {
             // Find logic similar to aircrafts
-            const rawLegal = row['RAZÃO'] || row['RAZÃO SOCIAL'] || row['LEGAL'] || row['NOME'] || row['legal_name'] || '';
-            const rawAirline = row['COMP.'] || row['COMPANHIA'] || row['AIRLINE'] || row['airline'] || '';
-            const rawCode = row['COD. COMP.'] || row['CODIGO'] || row['CÓD.'] || row['CODE'] || row['airline_code'] || '';
+            const rawLegal = row['RAZÃO'] || row['RAZÃO SOCIAL'] || row['LEGAL'] || row['NOME'] || row['LEGAL_NAME'] || '';
+            const rawAirline = row['COMP.'] || row['COMPANHIA'] || row['AIRLINE'] || '';
+            const rawCode = row['CÓD. DA COMP'] || row['COD. COMP.'] || row['CODIGO'] || row['CÓD.'] || row['CODE'] || row['AIRLINE_CODE'] || '';
+            const rawCountry = row['PAÍS/REGIÃO'] || row['PAÍS'] || row['COUNTRY'] || '';
 
             const legalNameStr = String(rawLegal).trim();
             const airlineStr = String(rawAirline).trim();
             const codeStr = String(rawCode).trim().toUpperCase();
+            const countryStr = String(rawCountry).trim();
 
             if (!codeStr) {
                 missingCodeCount++;
                 continue;
             }
 
+            if (seenCodes.has(codeStr)) {
+                // If there are duplicate codes in the excel file, keep the first one
+                continue;
+            }
+            seenCodes.add(codeStr);
+
+            let categoryToUse: 'NACIONAL' | 'INTERNACIONAL' | 'EXECUTIVA' = activeTab as any;
+            if (activeTab === 'GERAL') categoryToUse = 'NACIONAL';
+            
+            if (countryStr) {
+                const upperCountry = countryStr.toUpperCase();
+                if (upperCountry === 'BRASIL' || upperCountry === 'BR' || upperCountry === 'BRAZIL') {
+                    categoryToUse = 'NACIONAL';
+                } else if (upperCountry) {
+                    categoryToUse = 'INTERNACIONAL';
+                }
+            }
+
             airlinesToUpsert.push({
                 legal_name: legalNameStr,
                 airline: airlineStr || codeStr,
                 airline_code: codeStr,
+                country: countryStr,
                 is_active: true,
-                category: activeTab === 'GERAL' ? 'NACIONAL' : activeTab,
+                category: categoryToUse,
             });
         }
 
@@ -351,6 +432,12 @@ export const AirlinesAdmin: React.FC<AirlinesAdminProps> = ({ isDarkMode }) => {
                   ref={fileInputRef}
                   onChange={handleImportExcel} 
                />
+               <button 
+                  onClick={() => setConfirmDeleteAll(true)} 
+                  className={`px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded shadow-md transition-colors flex items-center gap-1.5 active:scale-95 ${isDarkMode ? 'bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20' : 'bg-white hover:bg-red-50 text-red-600 border border-red-200'}`}
+               >
+                  <Trash2 size={14} /> LIMPAR TUDO
+               </button>
                <button onClick={handleCreateNewAirline} className={`px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded shadow-md transition-colors flex items-center gap-1.5 active:scale-95 ${isDarkMode ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-[#329858] hover:bg-[#29824a] text-white'}`}>
                   <Plus size={14} /> NOVO
                </button>
@@ -421,7 +508,7 @@ export const AirlinesAdmin: React.FC<AirlinesAdminProps> = ({ isDarkMode }) => {
                                                            <img src={airline.logo_url} alt="Logo" className="w-full h-full object-contain bg-white" />
                                                         ) : airline.airline_code ? (
                                                            <>
-                                                             <img src={`https://images.kiwi.com/airlines/64/${airline.airline_code}.png`} alt="Logo" className="w-full h-full object-contain bg-white" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling?.classList.remove('hidden'); }} />
+                                                             <img src={getLogoUrl(airline.airline_code)} alt="Logo" className="w-full h-full object-contain bg-white" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling?.classList.remove('hidden'); }} />
                                                              <div className="hidden w-full h-full flex items-center justify-center">
                                                                 <ImageIcon size={14} className="text-slate-300" />
                                                              </div>
@@ -562,7 +649,7 @@ export const AirlinesAdmin: React.FC<AirlinesAdminProps> = ({ isDarkMode }) => {
                                     <img src={airline.logo_url} className="w-full h-full object-contain" />
                                  ) : airline.airline_code ? (
                                     <>
-                                      <img src={`https://images.kiwi.com/airlines/64/${airline.airline_code}.png`} className="w-full h-full object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling?.classList.remove('hidden'); }} />
+                                      <img src={getLogoUrl(airline.airline_code)} className="w-full h-full object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling?.classList.remove('hidden'); }} />
                                       <div className="hidden w-full h-full flex items-center justify-center">
                                          <ImageIcon size={20} className="text-slate-300" />
                                       </div>
@@ -606,10 +693,17 @@ export const AirlinesAdmin: React.FC<AirlinesAdminProps> = ({ isDarkMode }) => {
                                 <li><strong className={isDarkMode ? 'text-blue-400' : 'text-blue-600'}>RAZÃO SOCIAL / RAZÃO</strong> - Nome completo legal (ex: Latam Airlines Brasil)</li>
                                 <li><strong className={isDarkMode ? 'text-blue-400' : 'text-blue-600'}>COMP. / COMPANHIA</strong> - Nome simplificado / Comercial (ex: LATAM)</li>
                                 <li><strong className={isDarkMode ? 'text-blue-400' : 'text-blue-600'}>CÓD. DA COMP / COD. COMP / CODE</strong> (Obrigatório) - Código IATA/ICAO ou identificador único (ex: LA, G3, TP)</li>
+                                <li><strong className={isDarkMode ? 'text-blue-400' : 'text-blue-600'}>PAÍS/REGIÃO</strong> (Opcional) - País ou região de origem (ex: Brasil)</li>
                             </ul>
                         </div>
 
                         <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                            <button
+                              onClick={() => downloadTemplate('airlines')}
+                              className={`px-6 py-2 rounded text-sm font-bold uppercase tracking-wider transition-colors flex items-center gap-2 ${isDarkMode ? 'bg-blue-600 hover:bg-blue-500' : 'bg-blue-600 hover:bg-blue-700'} text-white`}
+                            >
+                                <Download size={16} /> BAIXAR MODELO
+                            </button>
                             <button 
                               onClick={() => setShowImportInstructions(false)}
                               className={`px-6 py-2 rounded text-sm font-bold uppercase tracking-wider transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}
@@ -626,6 +720,37 @@ export const AirlinesAdmin: React.FC<AirlinesAdminProps> = ({ isDarkMode }) => {
                             >
                                 {isImporting ? <RefreshCw size={16} className="animate-spin" /> : <Upload size={16} />}
                                 INICIAR IMPORTAÇÃO
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        , document.body)}
+
+        {/* DELETE ALL MODAL */}
+        {confirmDeleteAll && createPortal(
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                <div className={`w-full max-w-sm rounded-xl overflow-hidden shadow-2xl border ${isDarkMode ? 'bg-slate-900 border-red-900/50 text-white' : 'bg-white border-red-200 text-slate-800'}`}>
+                    <div className="p-6">
+                        <div className="flex items-center gap-3 mb-2 text-red-500">
+                            <Trash2 size={24} />
+                            <h3 className="text-lg font-bold">Limpeza de Banco de Dados</h3>
+                        </div>
+                        <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} mb-6`}>
+                           <strong>ATENÇÃO:</strong> Esta ação irá excluir <strong>TODOS</strong> os registros desta tabela. Esta ação é irreversível. Deseja continuar?
+                        </p>
+                        <div className="flex justify-end gap-3">
+                            <button 
+                              onClick={() => setConfirmDeleteAll(false)}
+                              className={`px-4 py-2 rounded text-sm font-bold uppercase tracking-wider transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}
+                            >
+                                CANCELAR
+                            </button>
+                            <button 
+                              onClick={handleDeleteAll}
+                              className="px-4 py-2 rounded text-sm font-bold uppercase tracking-wider bg-red-500 hover:bg-red-600 text-white transition-colors"
+                            >
+                                SIM, EXCLUIR TUDO
                             </button>
                         </div>
                     </div>

@@ -2,21 +2,24 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, Plus, Trash2, Edit2, ChevronDown, RefreshCw, Save, X, Settings, Database } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-
-import { Vehicle } from '../types';
+import { updateVehicleOperator } from '../services/supabaseService';
+import { OperatorCell } from './OperatorCell';
+import { Vehicle, OperatorProfile } from '../types';
 
 interface FleetsAdminProps {
   isDarkMode: boolean;
   globalVehicles: Vehicle[];
   onUpdateGlobalVehicles: (vehicles: Vehicle[]) => void;
+  globalOperators: OperatorProfile[];
 }
 
-type FleetField = 'fleetNumber' | 'type' | 'manufacturer' | 'status' | 'maxFlowRate' | 'hasPlatform' | 'capacity' | 'plate' | 'atve' | 'actions';
+type FleetField = 'fleetNumber' | 'type' | 'operado' | 'manufacturer' | 'status' | 'maxFlowRate' | 'hasPlatform' | 'capacity' | 'plate' | 'atve' | 'actions';
 
 interface FleetAdminItem {
   id: string;
   fleetNumber: string;
   type: string;
+  operado: string;
   manufacturer: string;
   status: string;
   maxFlowRate: number;
@@ -30,6 +33,7 @@ interface FleetAdminItem {
 const COLUMNS: { key: FleetField; label: string; width: string; isVariable: boolean }[] = [
   { key: 'fleetNumber', label: 'ID Frota', width: 'w-[100px]', isVariable: true },
   { key: 'type', label: 'Tipo', width: 'w-[120px]', isVariable: true },
+  { key: 'operado', label: 'Operado', width: 'w-[150px]', isVariable: false },
   { key: 'manufacturer', label: 'Fabricante', width: 'w-[200px]', isVariable: true },
   { key: 'status', label: 'Status', width: 'w-[140px]', isVariable: true },
   { key: 'hasPlatform', label: 'Plat. (S/N)?', width: 'w-[100px]', isVariable: true },
@@ -39,7 +43,7 @@ const COLUMNS: { key: FleetField; label: string; width: string; isVariable: bool
   { key: 'actions', label: 'Ações', width: 'w-[80px]', isVariable: false },
 ];
 
-export const FleetsAdmin: React.FC<FleetsAdminProps> = ({ isDarkMode, globalVehicles, onUpdateGlobalVehicles }) => {
+export const FleetsAdmin: React.FC<FleetsAdminProps> = ({ isDarkMode, globalVehicles, onUpdateGlobalVehicles, globalOperators }) => {
   const [fleets, setFleets] = useState<FleetAdminItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -51,21 +55,32 @@ export const FleetsAdmin: React.FC<FleetsAdminProps> = ({ isDarkMode, globalVehi
   const [focusedCell, setFocusedCell] = useState<{ rowId: string; col: number } | null>(null);
   const [editingCell, setEditingCell] = useState<{ rowId: string; col: number } | null>(null);
   const [isKeystrokeEdit, setIsKeystrokeEdit] = useState(false);
+  const [operatorModalState, setOperatorModalState] = useState<{
+    isOpen: boolean;
+    fleetId: string;
+    fleetNumber: string;
+    top: number;
+    left: number;
+  } | null>(null);
   
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  const [feedback, setFeedback] = useState<{ msg: string; isError: boolean } | null>(null);
+
   const tableRef = useRef<HTMLTableElement>(null);
   const optionsMenuRef = useRef<HTMLDivElement>(null);
   const [showOptionsDropdown, setShowOptionsDropdown] = useState(false);
 
   const fetchFleets = async () => {
     setIsLoading(true);
-    const { data, error } = await supabase.from('frotas').select('*').order('fleet_number');
+    const { data, error } = await supabase.from('frotas').select('*, operadores_geral(war_name)').order('fleet_number');
     if (!error && data) {
       setFleets(prev => {
         const newUnsaved = prev.filter(f => f.id.startsWith('new-'));
-        const fetched = data.map(v => ({
+        const fetched = data.map((v: any) => ({
           id: v.id,
           fleetNumber: v.fleet_number || '',
           type: v.type || 'SERVIDOR',
+          operado: v.operadores_geral?.war_name || '--',
           manufacturer: v.manufacturer || '',
           status: v.status || 'INATIVO',
           maxFlowRate: v.max_flow_rate || 0,
@@ -85,6 +100,17 @@ export const FleetsAdmin: React.FC<FleetsAdminProps> = ({ isDarkMode, globalVehi
 
   useEffect(() => {
     fetchFleets();
+
+    const subscription = supabase
+      .channel('frotas-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'frotas' }, () => {
+        fetchFleets();
+      })
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -205,6 +231,21 @@ export const FleetsAdmin: React.FC<FleetsAdminProps> = ({ isDarkMode, globalVehi
     }
     setFleets(prev => prev.filter(f => f.id !== id));
     setFocusedCell(null);
+  };
+
+  const handleDeleteAll = async () => {
+    try {
+        const { error } = await supabase.from('frotas').delete().not('id', 'is', null);
+        if (error) {
+             setFeedback({ msg: `Erro ao excluir dados: ${error.message}`, isError: true });
+        } else {
+             setFleets([]);
+             setConfirmDeleteAll(false);
+             setFeedback({ msg: 'Todos os registros de frotas foram excluídos com sucesso.', isError: false });
+        }
+    } catch (e: any) {
+        setFeedback({ msg: `Erro de rede: ${e.message}`, isError: true });
+    }
   };
 
   const lastStableRef = useRef<FleetAdminItem[]>([]);
@@ -475,6 +516,17 @@ export const FleetsAdmin: React.FC<FleetsAdminProps> = ({ isDarkMode, globalVehi
                   <Plus size={14} />
                   <span>Add. Frota</span>
                 </button>
+                <div className={`h-[1px] w-full my-1 ${isDarkMode ? 'bg-white/10' : 'bg-slate-200'}`} />
+                <button 
+                  onClick={() => {
+                    setConfirmDeleteAll(true);
+                    setShowOptionsDropdown(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${isDarkMode ? 'text-red-400 hover:bg-red-500/10 hover:text-red-300' : 'text-red-600 hover:bg-red-50 hover:text-red-500'}`}
+                >
+                  <Trash2 size={14} />
+                  <span>Limpar Tudo</span>
+                </button>
               </div>
             </div>
           )}
@@ -612,6 +664,27 @@ export const FleetsAdmin: React.FC<FleetsAdminProps> = ({ isDarkMode, globalVehi
                                 }`}>
                                    {value}
                                 </span>
+                            ) : col.key === 'operado' ? (
+                                <div className="flex items-center gap-2 relative w-full h-full" onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (v.id.startsWith('new-')) return;
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  setOperatorModalState({
+                                    isOpen: true,
+                                    fleetId: v.id,
+                                    fleetNumber: v.fleetNumber,
+                                    top: rect.bottom + window.scrollY,
+                                    left: rect.left + window.scrollX
+                                  });
+                                }}>
+                                  <OperatorCell 
+                                    operatorName={String(value) === '--' ? '' : String(value)} 
+                                    operators={globalOperators} 
+                                    size="sm" 
+                                    showName={true} 
+                                    className="cursor-pointer hover:opacity-80 w-full"
+                                  />
+                                </div>
                             ) : (
                                 <span className="truncate w-full">{value}</span>
                             )}
@@ -635,6 +708,94 @@ export const FleetsAdmin: React.FC<FleetsAdminProps> = ({ isDarkMode, globalVehi
           )}
         </div>
       </div>
+      
+      {operatorModalState?.isOpen && createPortal(
+          <div className="fixed inset-0 z-[10000]" onClick={() => setOperatorModalState(null)}>
+              <div 
+                className={`absolute p-3 rounded-xl shadow-2xl border w-64 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                style={{ top: Math.min(operatorModalState.top, window.innerHeight - 150), left: Math.min(operatorModalState.left, window.innerWidth - 260) }}
+                onClick={e => e.stopPropagation()}
+              >
+                  <h4 className="text-[10px] tracking-widest text-slate-500 font-bold uppercase mb-3 border-b pb-2">Opções p/ a Frota</h4>
+                  
+                  <div className="flex flex-col gap-2">
+                      <select 
+                          className={`w-full font-bold uppercase text-[10px] p-2 rounded bg-transparent border focus:outline-none focus:ring-2 focus:ring-indigo-500 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}
+                          onChange={(e) => {
+                              const newOpId = e.target.value === 'NULL' ? null : e.target.value;
+                              
+                              // 1. Solicitacao
+                              setOperatorModalState(null);
+                              
+                              // 2. Atualizar no DB
+                              updateVehicleOperator(operatorModalState.fleetId, newOpId).then(() => {
+                                  fetchFleets();
+                              });
+                          }}
+                          defaultValue=""
+                      >
+                          <option value="" disabled className="text-slate-500 dark:bg-slate-900">ALTERAR OPERADOR...</option>
+                          <option value="NULL" className="text-red-500 dark:bg-slate-900">-- NENHUM --</option>
+                          {globalOperators.map(op => (
+                              <option key={op.id} value={op.id} className="dark:bg-slate-900">{op.warName}</option>
+                          ))}
+                      </select>
+                      
+                      <div className="flex justify-between gap-2 mt-2">
+                         <button 
+                           className="flex-1 py-1.5 px-2 bg-red-500 hover:bg-red-600 text-white shadow-sm text-[9px] tracking-widest focus:ring-2 ring-red-500 focus:outline-none font-bold rounded uppercase transition-colors"
+                           onClick={() => {
+                               setOperatorModalState(null);
+                               updateVehicleOperator(operatorModalState.fleetId, null).then(() => {
+                                   fetchFleets();
+                               });
+                           }}
+                         >
+                            Remover
+                         </button>
+                         <button 
+                           className={`flex-1 py-1.5 px-2 text-[9px] tracking-widest font-bold rounded uppercase transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                           onClick={() => setOperatorModalState(null)}
+                         >
+                            Cancelar
+                         </button>
+                      </div>
+                  </div>
+              </div>
+          </div>,
+          document.body
+      )}
+      
+      {/* CONFIRM DELETE ALL MODAL */}
+      {confirmDeleteAll && createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className={`w-full max-w-sm rounded-xl overflow-hidden shadow-2xl border ${isDarkMode ? 'bg-slate-900 border-red-900/50 text-white' : 'bg-white border-red-200 text-slate-800'}`}>
+                  <div className="p-6">
+                      <div className="flex items-center gap-3 mb-2 text-red-500">
+                          <Trash2 size={24} />
+                          <h3 className="text-lg font-bold">Limpeza de Banco de Dados</h3>
+                      </div>
+                      <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} mb-6`}>
+                         <strong>ATENÇÃO:</strong> Esta ação irá excluir <strong>TODAS AS FROTAS (VIATURAS)</strong> do sistema. Esta ação é irreversível. Deseja continuar?
+                      </p>
+                      <div className="flex justify-end gap-3">
+                          <button 
+                            onClick={() => setConfirmDeleteAll(false)}
+                            className={`px-4 py-2 rounded text-sm font-bold uppercase tracking-wider transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}
+                          >
+                              CANCELAR
+                          </button>
+                          <button 
+                            onClick={handleDeleteAll}
+                            className="px-4 py-2 rounded text-sm font-bold uppercase tracking-wider bg-red-500 hover:bg-red-600 text-white transition-colors"
+                          >
+                              SIM, EXCLUIR TUDO
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      , document.body)}
     </div>
   );
 };

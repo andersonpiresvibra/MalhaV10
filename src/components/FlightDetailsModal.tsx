@@ -524,7 +524,11 @@ export const FlightDetailsModal: React.FC<FlightDetailsModalProps> = ({ flight, 
             <div className="flex items-center gap-3">
                 <div className="w-10 h-10 flex items-center justify-center shrink-0 bg-white rounded shadow-inner p-1">
                     <img 
-                        src={`https://images.kiwi.com/airlines/64/${localFlight.airlineCode === 'RG' ? 'G3' : localFlight.airlineCode}.png`}
+                        src={
+                            (localFlight.airlineCode === 'RG' || localFlight.airlineCode === 'G3') 
+                            ? 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/Gol_Linhas_A%C3%A9reas_Inteligentes_logo_2015.svg/320px-Gol_Linhas_A%C3%A9reas_Inteligentes_logo_2015.svg.png'
+                            : `https://images.kiwi.com/airlines/64/${localFlight.airlineCode}.png`
+                        }
                         alt={localFlight.airline}
                         className="w-full h-full object-contain"
                         onError={(e) => {

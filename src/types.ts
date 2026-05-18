@@ -230,6 +230,7 @@ export interface AirlineType {
   legal_name: string;
   airline: string;
   airline_code: string;
+  country?: string;
   category?: 'GERAL' | 'NACIONAL' | 'INTERNACIONAL' | 'EXECUTIVA';
   is_active: boolean;
 }

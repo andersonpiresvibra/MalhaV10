@@ -59,6 +59,27 @@ const isTimeInShift = (timeStr: string, shift: MeshShift) => {
   return true;
 };
 
+const ICAO_CITIES: Record<string, string> = {
+  'SBGL': 'GALEÃO',
+  'SBGR': 'GUARULHOS',
+  'SBSP': 'CONGONHAS',
+  'SBRJ': 'ST. DUMONT',
+  'SBKP': 'VIRACOPOS',
+  'SBNT': 'NATAL',
+  'SBSV': 'SALVADOR',
+  'SBPA': 'PTO ALEGRE',
+  'SBCT': 'CURITIBA',
+  'LPPT': 'LISBOA',
+  'EDDF': 'FRANKFURT',
+  'LIRF': 'FIUMICINO',
+  'KMIA': 'MIAMI',
+  'KATL': 'ATLANTA',
+  'MPTO': 'TOCUMEN',
+  'SCEL': 'SANTIAGO',
+  'SUMU': 'MONTEVIDÉU',
+  'SAEZ': 'EZEIZA',
+};
+
 interface SortConfig {
   key: keyof FlightData | null;
   direction: SortDirection;

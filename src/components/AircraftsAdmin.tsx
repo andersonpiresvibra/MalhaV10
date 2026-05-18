@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, Database, RefreshCw, Upload, Info } from 'lucide-react';
+import { Plus, Trash2, Database, RefreshCw, Upload, Info, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabase';
 import { AirlineLogo } from './AirlineLogo';
 import { AircraftType } from '../types';
+import { downloadTemplate } from '../utils/excelTemplateUtils';
 
 interface AircraftsAdminProps {
   isDarkMode: boolean;
@@ -37,6 +38,7 @@ export const AircraftsAdmin: React.FC<AircraftsAdminProps> = ({ isDarkMode }) =>
   const [isImporting, setIsImporting] = useState(false);
   const [feedback, setFeedback] = useState<{ msg: string; isError: boolean } | null>(null);
   const [confirmDeleteAirline, setConfirmDeleteAirline] = useState<string | null>(null);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const tableRef = useRef<HTMLTableElement>(null);
@@ -163,6 +165,23 @@ export const AircraftsAdmin: React.FC<AircraftsAdminProps> = ({ isDarkMode }) =>
     } catch(e) {
         console.error(e);
         fetchAircrafts();
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    try {
+        const { error } = await supabase.from('aeronaves').delete().not('id', 'is', null);
+        if (error) {
+             setFeedback({ msg: `Erro ao excluir dados: ${error.message}`, isError: true });
+        } else {
+             setAircrafts([]);
+             setAirlines([]);
+             setActiveAirline('EM GERAL');
+             setConfirmDeleteAll(false);
+             setFeedback({ msg: 'Todos os registros de aeronaves foram excluídos com sucesso.', isError: false });
+        }
+    } catch (e: any) {
+        setFeedback({ msg: `Erro de rede: ${e.message}`, isError: true });
     }
   };
 
@@ -523,6 +542,12 @@ export const AircraftsAdmin: React.FC<AircraftsAdminProps> = ({ isDarkMode }) =>
                  </button>
                )}
                <button 
+                  onClick={() => setConfirmDeleteAll(true)} 
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-widest border transition-all shadow-sm ${isDarkMode ? 'bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20' : 'bg-white hover:bg-red-50 text-red-600 border border-red-200'}`}
+               >
+                  <Trash2 size={12} /> Limpar Tudo
+               </button>
+               <button 
                    onClick={handleCreateNewAircraft}
                    disabled={!activeAirline || activeAirline === 'EM GERAL'}
                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-widest border transition-all shadow-sm ${isDarkMode ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20' : 'bg-[#329858] text-white border-[#29824a] hover:bg-[#29824a]'} ${!activeAirline || activeAirline === 'EM GERAL' ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'}`}
@@ -753,7 +778,13 @@ export const AircraftsAdmin: React.FC<AircraftsAdminProps> = ({ isDarkMode }) =>
                         </div>
                     </div>
 
-                    <div className="flex items-center justify-end pt-2">
+                    <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-800">
+                        <button 
+                            onClick={() => downloadTemplate('aircrafts')}
+                            className={`px-4 py-2 text-xs font-black uppercase tracking-wider rounded transition-colors flex items-center gap-2 ${isDarkMode ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
+                        >
+                            <Download size={14} /> BAIXAR MODELO
+                        </button>
                         <button 
                             onClick={() => setShowImportInstructions(false)} 
                             className={`px-6 py-2 text-xs font-black uppercase tracking-wider rounded transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-white' : 'bg-slate-200 hover:bg-slate-300 text-slate-800'}`}
@@ -801,6 +832,37 @@ export const AircraftsAdmin: React.FC<AircraftsAdminProps> = ({ isDarkMode }) =>
             </div>,
             document.body
         )}
+
+        {/* CONFIRM DELETE ALL MODAL */}
+        {confirmDeleteAll && createPortal(
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                <div className={`w-full max-w-sm rounded-xl overflow-hidden shadow-2xl border ${isDarkMode ? 'bg-slate-900 border-red-900/50 text-white' : 'bg-white border-red-200 text-slate-800'}`}>
+                    <div className="p-6">
+                        <div className="flex items-center gap-3 mb-2 text-red-500">
+                            <Trash2 size={24} />
+                            <h3 className="text-lg font-bold">Limpeza de Banco de Dados</h3>
+                        </div>
+                        <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} mb-6`}>
+                           <strong>ATENÇÃO:</strong> Esta ação irá excluir <strong>TODAS AS AERONAVES</strong> do sistema. Esta ação é irreversível. Deseja continuar?
+                        </p>
+                        <div className="flex justify-end gap-3">
+                            <button 
+                              onClick={() => setConfirmDeleteAll(false)}
+                              className={`px-4 py-2 rounded text-sm font-bold uppercase tracking-wider transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}
+                            >
+                                CANCELAR
+                            </button>
+                            <button 
+                              onClick={handleDeleteAll}
+                              className="px-4 py-2 rounded text-sm font-bold uppercase tracking-wider bg-red-500 hover:bg-red-600 text-white transition-colors"
+                            >
+                                SIM, EXCLUIR TUDO
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        , document.body)}
 
         {/* CONFIRM DELETE AIRLINE MODAL */}
         {confirmDeleteAirline && createPortal(

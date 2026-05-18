@@ -12,6 +12,7 @@ import { generateUUID } from '../utils/uuid';
 import { TimeConflictModal } from './TimeConflictModal';
 import { PieChartDashboard } from './PieChartDashboard';
 import { formatAirlineName } from '../utils/airlineUtils';
+import { downloadTemplate } from '../utils/excelTemplateUtils';
 
 const getMinutesDiff = (targetTimeStr: string, flightDateStr?: string) => {
     if (!targetTimeStr) return 0;
@@ -1136,6 +1137,17 @@ export const RootMesh: React.FC<RootMeshProps> = ({
                     }} 
                   />
                 </label>
+
+                <button 
+                  onClick={() => {
+                    downloadTemplate('malha_raiz');
+                    setShowOptionsDropdown(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${isDarkMode ? 'text-slate-300 hover:bg-blue-500/10 hover:text-blue-400' : 'text-slate-600 hover:bg-blue-50 hover:text-blue-600'}`}
+                >
+                  <Download size={14} />
+                  Baixar Modelo
+                </button>
 
                 <button 
                   onClick={handleSaveRootMeshDB}

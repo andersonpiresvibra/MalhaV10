@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 import { getBaseMeshFlights, upsertBaseMeshFlights, getDestinos } from './supabaseService';
-import { supabase } from './supabaseService';
 
 vi.mock('./supabaseService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./supabaseService')>();

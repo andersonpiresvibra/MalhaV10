@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, Database, RefreshCw, Upload, Info } from 'lucide-react';
+import { Plus, Trash2, Database, RefreshCw, Upload, Info, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabase';
 import { getRootMesh, deleteRootMeshFlight, upsertRootMesh, clearRootMesh } from '../services/supabaseService';
 import { AirlineLogo } from './AirlineLogo';
 import { MeshFlight } from '../types';
+import { downloadTemplate } from '../utils/excelTemplateUtils';
 
 interface MalhaRaizAdminProps {
   isDarkMode: boolean;
@@ -36,6 +37,7 @@ export const MalhaRaizAdmin: React.FC<MalhaRaizAdminProps> = ({ isDarkMode }) =>
   const [isImporting, setIsImporting] = useState(false);
   const [feedback, setFeedback] = useState<{ msg: string; isError: boolean } | null>(null);
   const [confirmDeleteAirline, setConfirmDeleteAirline] = useState<string | null>(null);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const tableRef = useRef<HTMLTableElement>(null);
@@ -171,6 +173,23 @@ export const MalhaRaizAdmin: React.FC<MalhaRaizAdminProps> = ({ isDarkMode }) =>
     } catch(e) {
         console.error(e);
         fetchFlights();
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    try {
+        const { error } = await supabase.from('malha_raiz').delete().not('id', 'is', null);
+        if (error) {
+             setFeedback({ msg: `Erro ao excluir dados: ${error.message}`, isError: true });
+        } else {
+             setFlights([]);
+             setAirlines([]);
+             setActiveAirline('EM GERAL');
+             setConfirmDeleteAll(false);
+             setFeedback({ msg: 'Todos os voos foram excluídos com sucesso.', isError: false });
+        }
+    } catch (e: any) {
+        setFeedback({ msg: `Erro de rede: ${e.message}`, isError: true });
     }
   };
 
@@ -369,6 +388,9 @@ export const MalhaRaizAdmin: React.FC<MalhaRaizAdminProps> = ({ isDarkMode }) =>
           const etaRaw = getVal(['ESTIMADO', 'ETA', 'CHEGADA']);
           const etdRaw = getVal(['SAIDA', 'ETD', 'PARTIDA']);
           const ciaRaw = getVal(['COMPANHIA', 'CIA', 'EMPRESA', 'AIRLINE']);
+          const prefixoRaw = getVal(['PREFIXO', 'REGISTRATION', 'MATRICULA']);
+          const modeloRaw = getVal(['MODELO', 'AERONAVE', 'EQUIPAMENTO', 'MODEL']);
+          const posicaoRaw = getVal(['POSICAO', 'BOX', 'GATE', 'PORTAO']);
 
           const voo = vooRaw?.toString().toUpperCase().trim() || isVooKey?.toString().toUpperCase().trim();
           let cia = ciaRaw?.toString().toUpperCase().trim() || '';
@@ -393,7 +415,10 @@ export const MalhaRaizAdmin: React.FC<MalhaRaizAdminProps> = ({ isDarkMode }) =>
               airline_code: cia,
               destination: destinoRaw?.toString().toUpperCase().trim() || '',
               eta: formatExcelTime(etaRaw),
-              etd: formatExcelTime(etdRaw)
+              etd: formatExcelTime(etdRaw),
+              registration: prefixoRaw?.toString().toUpperCase().trim() || '',
+              model: modeloRaw?.toString().toUpperCase().trim() || '',
+              positionId: posicaoRaw?.toString().toUpperCase().trim() || ''
           });
       }
 
@@ -504,19 +529,7 @@ export const MalhaRaizAdmin: React.FC<MalhaRaizAdminProps> = ({ isDarkMode }) =>
 
   const handleDeleteAction = async () => {
     if (activeAirline === 'EM GERAL') {
-        if (!window.confirm("Deseja realmente limpar TODA a malha raiz? Esta ação não pode ser desfeita.")) return;
-        setIsLoading(true);
-        try {
-            await clearRootMesh();
-            setFlights([]);
-            setAirlines([]);
-            setActiveAirline('EM GERAL');
-            setFeedback({ msg: "Malha raiz limpa com sucesso.", isError: false });
-        } catch (e: any) {
-            setFeedback({ msg: `Erro ao limpar malha: ${e.message}`, isError: true });
-        } finally {
-            setIsLoading(false);
-        }
+        setConfirmDeleteAll(true);
     } else {
         setConfirmDeleteAirline(activeAirline);
     }
@@ -782,6 +795,9 @@ export const MalhaRaizAdmin: React.FC<MalhaRaizAdminProps> = ({ isDarkMode }) =>
                             <li><strong className={isDarkMode ? 'text-blue-400' : 'text-blue-600'}>ICAO</strong> (Opcional) - ICAO de destino (ex: SBPS)</li>
                             <li><strong>ETA</strong> (Opcional) - Horário Estimado (ex: 22:50)</li>
                             <li><strong>ETD</strong> (Opcional) - Horário de Saída (ex: 00:00)</li>
+                            <li><strong>PREFIXO</strong> (Opcional) - Matrícula (ex: PR-XMB)</li>
+                            <li><strong>MODELO</strong> (Opcional) - Equipamento (ex: B738)</li>
+                            <li><strong>POSIÇÃO</strong> (Opcional) - Box/Portão (ex: J12)</li>
                         </ul>
                         
                         <div className={`p-3 rounded text-xs border ${isDarkMode ? 'bg-amber-900/20 border-amber-500/30 text-amber-200' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
@@ -789,7 +805,13 @@ export const MalhaRaizAdmin: React.FC<MalhaRaizAdminProps> = ({ isDarkMode }) =>
                         </div>
                     </div>
 
-                    <div className="flex items-center justify-end pt-2">
+                    <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-800">
+                        <button 
+                            onClick={() => downloadTemplate('malha_raiz')}
+                            className={`px-4 py-2 text-xs font-black uppercase tracking-wider rounded transition-colors flex items-center gap-2 ${isDarkMode ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
+                        >
+                            <Download size={14} /> BAIXAR MODELO
+                        </button>
                         <button 
                             onClick={() => setShowImportInstructions(false)} 
                             className={`px-6 py-2 text-xs font-black uppercase tracking-wider rounded transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-white' : 'bg-slate-200 hover:bg-slate-300 text-slate-800'}`}
@@ -860,6 +882,33 @@ export const MalhaRaizAdmin: React.FC<MalhaRaizAdminProps> = ({ isDarkMode }) =>
                         }} className={`px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded shadow-md transition-colors flex items-center gap-1.5 active:scale-95 ${isDarkMode ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-red-600 hover:bg-red-700 text-white'}`}>
                             <Trash2 size={12} />
                             Excluir
+                        </button>
+                    </div>
+                </div>
+            </div>,
+            document.body
+        )}
+
+        {/* CONFIRM DELETE ALL MODAL */}
+        {confirmDeleteAll && createPortal(
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm shadow-2xl p-4">
+                <div className={`p-6 rounded-xl shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)] w-full max-w-sm flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900 border border-red-900/50 text-white' : 'bg-white border-red-200 text-slate-800'}`}>
+                    <div className="flex items-center gap-3 text-red-500">
+                        <Trash2 size={24} />
+                        <h2 className={`font-black text-sm uppercase tracking-widest ${isDarkMode ? 'text-red-400' : 'text-red-600'}`}>
+                            Limpeza de Banco de Dados
+                        </h2>
+                    </div>
+                    <div className={`text-sm whitespace-pre-wrap font-medium ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                        <strong>ATENÇÃO:</strong> Esta ação irá excluir <strong>TODOS OS VOOS</strong> da malha raiz. Esta ação é irreversível. Deseja continuar?
+                    </div>
+                    <div className="flex items-center justify-end flex-wrap gap-2 pt-2">
+                        <button onClick={() => setConfirmDeleteAll(false)} className={`px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500 hover:bg-slate-100 text-slate-700'}`}>
+                            Cancelar
+                        </button>
+                        <button onClick={handleDeleteAll} className={`px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded shadow-md transition-colors flex items-center gap-1.5 active:scale-95 ${isDarkMode ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-red-600 hover:bg-red-700 text-white'}`}>
+                            <Trash2 size={12} />
+                            SIM, EXCLUIR TUDO
                         </button>
                     </div>
                 </div>

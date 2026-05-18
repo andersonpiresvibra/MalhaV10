@@ -52,7 +52,7 @@ export const getNormalizedAirlineInfo = (code: string) => {
     const upperCode = code?.toUpperCase() || '';
     if (!upperCode) return { iata: '', name: 'N/A' };
     if (upperCode.includes('LA') && upperCode.includes('TAM') || upperCode.includes('LATAM')) return { iata: 'LA', name: 'LATAM' };
-    if (upperCode.includes('GOL') || upperCode.includes('G3') || upperCode.includes('GLO')) return { iata: 'G3', name: 'GOL' };
+    if (upperCode.includes('GOL') || upperCode.includes('G3') || upperCode.includes('GLO') || upperCode === 'RG') return { iata: 'G3', name: 'GOL' };
     if (upperCode.includes('AZUL') || upperCode.includes('AD') || upperCode.includes('AZU')) return { iata: 'AD', name: 'AZUL' };
     if (upperCode.includes('TAP') || upperCode.includes('TP')) return { iata: 'TP', name: 'TAP' };
     if (upperCode.includes('FRANCE') || upperCode.includes('AFR') || upperCode.includes('AF')) return { iata: 'AF', name: 'AIR FRANCE' };
@@ -91,7 +91,10 @@ export const AirlineLogo: React.FC<AirlineLogoProps> = ({ airlineCode, className
   
   const info = getNormalizedAirlineInfo(airlineCode);
   
-  const iconUrl = `https://images.kiwi.com/airlines/64/${info.iata}.png`;
+  let iconUrl = `https://images.kiwi.com/airlines/64/${info.iata}.png`;
+  if (info.name === 'GOL' || info.iata === 'G3') {
+    iconUrl = 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/Gol_Linhas_A%C3%A9reas_Inteligentes_logo_2015.svg/320px-Gol_Linhas_A%C3%A9reas_Inteligentes_logo_2015.svg.png';
+  }
 
   const sizeClasses = {
     sm: 'w-5 h-5',

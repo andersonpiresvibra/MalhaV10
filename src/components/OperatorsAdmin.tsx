@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { updateOperatorWorkDays } from '../services/supabaseService';
 import { OperatorProfile } from '../types';
 import * as XLSX from 'xlsx';
+import { downloadTemplate } from '../utils/excelTemplateUtils';
 
 interface OperatorsAdminProps {
   isDarkMode: boolean;
@@ -58,6 +59,9 @@ export const OperatorsAdmin: React.FC<OperatorsAdminProps> = ({ isDarkMode, glob
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [photoUploadRowId, setPhotoUploadRowId] = useState<string | null>(null);
   
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  const [feedback, setFeedback] = useState<{ msg: string; isError: boolean } | null>(null);
+
   const tableRef = useRef<HTMLTableElement>(null);
   const optionsMenuRef = useRef<HTMLDivElement>(null);
   const [showOptionsDropdown, setShowOptionsDropdown] = useState(false);
@@ -425,6 +429,21 @@ export const OperatorsAdmin: React.FC<OperatorsAdminProps> = ({ isDarkMode, glob
     }
     setOperators(prev => prev.filter(f => f.id !== id));
     setFocusedCell(null);
+  };
+
+  const handleDeleteAll = async () => {
+    try {
+        const { error } = await supabase.from('operadores_geral').delete().not('id', 'is', null);
+        if (error) {
+             setFeedback({ msg: `Erro ao excluir dados: ${error.message}`, isError: true });
+        } else {
+             setOperators([]);
+             setConfirmDeleteAll(false);
+             setFeedback({ msg: 'Todos os registros de operadores foram excluídos com sucesso.', isError: false });
+        }
+    } catch (e: any) {
+        setFeedback({ msg: `Erro de rede: ${e.message}`, isError: true });
+    }
   };
 
   // Ref to hold the last stable version of operators before editing
@@ -801,6 +820,28 @@ export const OperatorsAdmin: React.FC<OperatorsAdminProps> = ({ isDarkMode, glob
 
                 <button 
                   onClick={() => {
+                    downloadTemplate('operators');
+                    setShowOptionsDropdown(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${isDarkMode ? 'text-slate-300 hover:bg-white/10 hover:text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+                >
+                  <Download size={14} />
+                  <span>Baixar Modelo</span>
+                </button>
+                <div className={`h-[1px] w-full my-1 ${isDarkMode ? 'bg-white/10' : 'bg-slate-200'}`} />
+                <button 
+                  onClick={() => {
+                    setConfirmDeleteAll(true);
+                    setShowOptionsDropdown(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${isDarkMode ? 'text-red-400 hover:bg-red-500/10 hover:text-red-300' : 'text-red-600 hover:bg-red-50 hover:text-red-500'}`}
+                >
+                  <Trash2 size={14} />
+                  <span>Limpar Tudo</span>
+                </button>
+
+                <button 
+                  onClick={() => {
                     handleExportList();
                     setShowOptionsDropdown(false);
                   }}
@@ -1173,6 +1214,37 @@ export const OperatorsAdmin: React.FC<OperatorsAdminProps> = ({ isDarkMode, glob
           }}
         />
       )}
+      {/* CONFIRM DELETE ALL MODAL */}
+      {confirmDeleteAll && createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className={`w-full max-w-sm rounded-xl overflow-hidden shadow-2xl border ${isDarkMode ? 'bg-slate-900 border-red-900/50 text-white' : 'bg-white border-red-200 text-slate-800'}`}>
+                  <div className="p-6">
+                      <div className="flex items-center gap-3 mb-2 text-red-500">
+                          <Trash2 size={24} />
+                          <h3 className="text-lg font-bold">Limpeza de Banco de Dados</h3>
+                      </div>
+                      <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} mb-6`}>
+                         <strong>ATENÇÃO:</strong> Esta ação irá excluir <strong>TODOS OS OPERADORES</strong> do sistema. Esta ação é irreversível. Deseja continuar?
+                      </p>
+                      <div className="flex justify-end gap-3">
+                          <button 
+                            onClick={() => setConfirmDeleteAll(false)}
+                            className={`px-4 py-2 rounded text-sm font-bold uppercase tracking-wider transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}
+                          >
+                              CANCELAR
+                          </button>
+                          <button 
+                            onClick={handleDeleteAll}
+                            className="px-4 py-2 rounded text-sm font-bold uppercase tracking-wider bg-red-500 hover:bg-red-600 text-white transition-colors"
+                          >
+                              SIM, EXCLUIR TUDO
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      , document.body)}
+
     </div>
   );
 };
